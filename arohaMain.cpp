@@ -6,11 +6,9 @@
 using namespace std;
 
 void Dashboard(){
-
     int choice;
-
-    do{
-
+    do{      
+        checkReminders(); 
         cout << "\n";
         cout << "========================================\n";
         cout << "         TASK MANAGER SYSTEM\n";
@@ -21,56 +19,42 @@ void Dashboard(){
         cout << "4. Remove Task\n";
         cout << "5. Mark Complete\n";
         cout << "6. Show Calendar\n";
-        cout << "7. Gamification & Quiz\n"; 
-        cout << "8. Exit\n";
-        
+        cout << "7. Show History\n";
+        cout << "8. Gamification & Quiz\n"; 
+        cout << "9. Exit\n";
         cout << "========================================\n";
-       
-        
-        cout << "========================================\n";
-
         cout << "Enter Choice: ";
         cin >> choice;
-
         switch(choice){
-
             case 1:
-                addTask();
-                break;
-
+             addTask(); 
+             break;
             case 2:
-                displayTasks();
-                break;
-
+             displayTasks(); 
+             break;
             case 3:
-                editTask();
-                break;
-
+             editTask();
+              break;
             case 4:
-                removeTask();
-                break;
-
-            case 5:
-                markCompleted();
-                break;
-
+             removeTask();
+              break;
+            case 5: 
+            markCompleted();
+             break;
             case 6:
-                displayCalendar();
-                break;
-
+             displayCalendar();
+              break;
             case 7:
-                displayGamification();
-                break;
-               
-    
+             displayHistory();
+             break;
             case 8:
-                cout << "\nThank You For Using Task Manager!\n";
+             displayGamification();
+              break;
+            case 9: 
+                cout << "\nThank You For Using Task Manager!\n"; 
                 break;
-             
-
-            default:
-                cout << "\nInvalid Choice!\n";
+            default: cout << "\nInvalid Choice!\n";
         }
 
-    }while(choice != 7);
+    } while(choice != 9);
 }

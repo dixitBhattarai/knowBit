@@ -1,0 +1,4 @@
+1|1|2026|6|20
+1|dont fly|wanna float|fly|2|1|365|20|6|2027|2026-06-20 19:11
+2|dont fly|dont wanna fly anomore|flying|3|0|120|18|10|2026|2026-06-20 19:28
+3|check|checking|chk|3|0|1|21|6|2026|2026-06-20 19:31
