@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+
 struct Task {
     int taskId;
     std::string taskName;
@@ -15,6 +16,7 @@ struct Task {
     int dueMonth;
     int dueYear;
     std::string dateCreated;
+    std::string dateCompleted; // <-- ADD THIS LINE ("YYYY-MM-DD" or "NONE")
 };
 extern std::vector<Task> allTasks;
 extern std::string activeUsername;
