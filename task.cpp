@@ -209,6 +209,7 @@ void checkReminders() {
                     urgencyFound = true;
                 }
                 cout << "[!] URGENT: '" << t.taskName << "' is due in " << daysLeft << " days!\n";
+                cout << hoursLeft << endl;
             }
         }
     }
