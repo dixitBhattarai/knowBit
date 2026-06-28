@@ -201,7 +201,7 @@ void checkReminders() {
             int secondsLeft = difftime(deadline_time, now);
               if (secondsLeft <= 0) { // Deadline already passed
                 cout << "\n========================================\n";
-                cout << "⚠️  DEADLINE REACHED: '" << t.taskName << "' is overdue!"
+                cout << "⚠️  DEADLINE REACHED: '" << t.taskName << "' is overdue!\n";
                 cout << "========================================\n";
             }
             int daysLeft =static_cast<int>( secondsLeft / (24 * 3600));
