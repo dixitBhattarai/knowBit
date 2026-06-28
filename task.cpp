@@ -200,6 +200,7 @@ void checkReminders() {
             time_t deadline_time = mktime(&deadline_tm);
             int secondsLeft = difftime(deadline_time, now);
             int daysLeft =static_cast<int>( secondsLeft / (24 * 3600));
+            if( daysLeft <0) daysLeft =0;
             int hoursleft=static_cast<int>((secondsLeft- daysLeft*24*3600)/3600);
             if (daysLeft <= 2.0) {
                 if (!urgencyFound) {
