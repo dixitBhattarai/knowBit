@@ -33,8 +33,6 @@ bool login(string username, string password) {
 }
 bool runLoginGUI() {
     const int screenWidth = 1200; const int screenHeight = 800;
-    InitWindow(screenWidth, screenHeight, "knowBit v1.0 - Login Page");
-    SetTargetFPS(60);
     Color bgColor = { 11, 17, 26, 255 }; Color saffronOrange = { 255, 128, 0, 255 }; 
     Color terminalGreen = { 0, 255, 65, 255 }; Color tealText = { 0, 180, 180, 255 };      
     Color purpleAccent = { 150, 100, 255, 255 }; Color inputBg = { 20, 25, 35, 255 };        
@@ -83,7 +81,7 @@ bool runLoginGUI() {
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 if (CheckCollisionPointRec(mousePoint, loginBtn)) {
                     if (login(string(usernameInput), string(passwordInput))) {
-                        CloseWindow(); return true;
+                        return true;
                     } else { loginMessage = "Error: Invalid username or password."; messageColor = RED; }
                 }
                 if (CheckCollisionPointRec(mousePoint, createBtn)) {
@@ -101,7 +99,6 @@ bool runLoginGUI() {
                     string guestName = "guest" + to_string(g);
                     registerUser(guestName, "");
                     activeUsername = guestName;  
-                    CloseWindow();
                     return true;
                 }
             }
@@ -144,6 +141,5 @@ bool runLoginGUI() {
     }
     UnloadTexture(logo); UnloadTexture(mountain); UnloadTexture(textLogo); UnloadTexture(hand);
     UnloadTexture(userIcon); UnloadTexture(lockIcon); UnloadTexture(eyeIcon); UnloadTexture(clockTower);
-    CloseWindow();
     return false;
 }

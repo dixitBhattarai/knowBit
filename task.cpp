@@ -79,7 +79,7 @@ void loadUserData() {
     saveUserData(); 
 }
 void saveUserData() {
-    ofstream file(activeUsername + ".txt"); // Saves directly into dixit.txt, guest1.txt, etc.
+    ofstream file(activeUsername + ".txt"); 
     file << activeUserStreak << "|" << activeUserMaxStreak << "|" << lastYear << "|" << lastMonth << "|" << lastDay << "\n";   
     for (const auto& t : allTasks) {
         file << t.taskId << "|" << t.taskName << "|" << t.taskDescription << "|" 
@@ -215,7 +215,11 @@ void checkReminders() {
                     urgencyFound = true;
                 }
                 cout << "[!] URGENT: '" << t.taskName << "' is due in " << daysLeft << " days!\n";
+<<<<<<< Updated upstream
                 cout << hoursLeft <<"hours!\n";
+=======
+                cout << hoursleft << endl;
+>>>>>>> Stashed changes
             }
         }
     }
