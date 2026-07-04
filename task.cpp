@@ -214,12 +214,9 @@ void checkReminders() {
                     cout << "========================================\n";
                     urgencyFound = true;
                 }
-                cout << "[!] URGENT: '" << t.taskName << "' is due in " << daysLeft << " days!\n";
-<<<<<<< Updated upstream
+  cout << "[!] URGENT: '" << t.taskName << "' is due in " << daysLeft << " days!\n";
                 cout << hoursLeft <<"hours!\n";
-=======
-                cout << hoursleft << endl;
->>>>>>> Stashed changes
+                cout << hoursLeft << endl;
             }
         }
     }
@@ -236,4 +233,4 @@ void displayHistory() {
     }
     cout << "=====================================================\n";
 }
-//ok 
+//ok
