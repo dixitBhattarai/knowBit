@@ -3,9 +3,14 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
+#include"include/raylib.h"
+
 using namespace std;
 vector<Task> allTasks;
 string activeUsername = "";
+bool showPopup = false;
+double popupStartTime = 0;
+Texture2D texMotivation;
 int activeUserStreak = 0;
 int activeUserMaxStreak = 0;
 int lastYear = 0, lastMonth = 0, lastDay = 0;
@@ -183,6 +188,8 @@ void markCompleted() {
             t.isCompleted = true;
             saveUserData(); // Save automatically!
             cout << "\nTask Marked as Complete!\n";
+            showPopup = true;
+            popupStartTime = GetTime();
             return;
         }
     }
@@ -215,11 +222,10 @@ void checkReminders() {
                     urgencyFound = true;
                 }
                 cout << "[!] URGENT: '" << t.taskName << "' is due in " << daysLeft << " days!\n";
-<<<<<<< Updated upstream
                 cout << hoursLeft <<"hours!\n";
-=======
-                cout << hoursleft << endl;
->>>>>>> Stashed changes
+
+                cout << hoursLeft << endl;
+
             }
         }
     }
@@ -236,4 +242,32 @@ void displayHistory() {
     }
     cout << "=====================================================\n";
 }
-//ok 
+void ShowCompletionPopup() {
+    if (texMotivation.id == 0) {
+        texMotivation = LoadTexture("assets/motivation.png");
+    }
+
+    int popupWidth = 500;
+    int popupHeight = 300;
+    int x = (GetScreenWidth() - popupWidth) / 2;
+    int y = (GetScreenHeight() - popupHeight) / 2;
+
+    // Background rectangle
+    DrawRectangle(x, y, popupWidth, popupHeight, Fade(DARKGRAY, 0.85f));
+    DrawRectangleLines(x, y, popupWidth, popupHeight, RAYWHITE);
+
+    // Draw motivational image centered
+    DrawTexture(texMotivation, 
+                x + (popupWidth/2 - texMotivation.width/2), 
+                y + (popupHeight/2 - texMotivation.height/2), 
+                WHITE);
+
+    // Overlay text
+    DrawText("Task Completed!", x + 50, y + popupHeight - 50, 30, GREEN);
+}
+void CleanupTaskTextures() {
+    if (texMotivation.id != 0) {
+        UnloadTexture(texMotivation);
+        texMotivation.id = 0;
+    }
+}
