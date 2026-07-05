@@ -1,0 +1,79 @@
+#include <iostream>
+#include <ctime>
+#include <limits>
+using namespace std;
+double totaltime = 0;
+time_t startTime, endTime;
+int status = 0; 
+
+void startStopwatch() {
+    if (status == 0) {
+        startTime = time(0);
+        status = 1;
+        cout << "Stopwatch started.\n";
+    } else {
+        cout << "Stopwatch is already running!\n";
+    }
+}
+
+void stopStopwatch() {
+    if (status == 1) {
+        endTime = time(0);
+        totaltime += difftime(endTime, startTime);
+        status = 0;
+        cout << "Stopwatch stopped.\n";
+        cout << "Total time: " << totaltime << " seconds\n";
+    } else {
+        cout << "Stopwatch is not running!\n";
+    }
+}
+
+void resumeStopwatch() {
+    if (status == 0) {
+        startTime = time(0);
+        status = 1;
+        cout << "Stopwatch resumed.\n";
+    } else {
+        cout << "Stopwatch is already running!\n";
+    }
+}
+
+void showtime() {
+    double currentTotal = totaltime;
+    if (status == 1) { // running
+        currentTotal += difftime(time(0), startTime);
+    }
+    int hours = currentTotal / 3600;
+    int minutes = ((int)currentTotal % 3600) / 60;
+    int seconds = (int)currentTotal % 60;
+
+    cout << "Elapsed time: " << currentTotal << " seconds ("
+         << hours << "h " << minutes << "m " << seconds << "s)\n";
+}
+
+int main() {
+    int choice;
+    while (true) {
+        cout << "\n1. Start\n2. Stop\n3. Resume\n4. Show Time\n5. Exit\n";
+        cout << "Enter choice: ";
+        if (!(cin >> choice)) {
+            cin.clear(); // clear error flag
+            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // discard bad input
+            cout << "Invalid input! Please enter a number.\n";
+            continue; // restart loop
+        }
+
+        switch (choice) {
+            case 1: startStopwatch(); break;
+            case 2: stopStopwatch(); break;
+            case 3: resumeStopwatch(); break;
+            case 4: showtime(); break;
+            case 5:
+                showtime();
+                cout << "Final Time: " << totaltime << " seconds\n";
+                return 0;
+            default:
+                cout << "Invalid Choice!\n";
+        }
+    }
+}

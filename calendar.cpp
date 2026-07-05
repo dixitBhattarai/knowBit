@@ -1,21 +1,25 @@
 #include "calendar.h"
-#include "include/raylib.h" 
+#include <raylib.h>
 #include <iostream>
 #include <iomanip>
 #include <ctime>
 #include <string>
+#include <cstdio>
 
 using namespace std;
 
 // GitHub Dark-Mode Contribution Color Palette Definitions
 #define COLOR_EMPTY        (Color){ 22, 27, 34, 255 }     // Dark Gray Empty Node
-#define COLOR_LEVEL_1      (Color){ 14, 68, 41, 255 }     // Low activity (1 task complete)
-#define COLOR_LEVEL_2      (Color){ 0, 109, 50, 255 }     // Medium-low (2 tasks complete)
-#define COLOR_LEVEL_3      (Color){ 38, 166, 65, 255 }    // Medium-high (3-4 tasks complete)
-#define COLOR_LEVEL_4      (Color){ 57, 211, 83, 255 }    // Maximum activity (5+ tasks complete)
+#define COLOR_ACTIVE_BASE  (Color){ 57, 211, 83, 255 }    // Base green — alpha scales with completion count
 
-#define CELL_SIZE          18   // Box dimension width and height
-#define CELL_PADDING       4    // Spacing between the heatmap boxes
+#define CELL_SIZE          26   // Box dimension width and height (enlarged)
+#define CELL_PADDING       6    // Spacing between the heatmap boxes (enlarged)
+
+// Intensity scaling for the heatmap: how many completions = fully opaque,
+// and the alpha range used to represent "a little" vs "a lot" of activity.
+#define MAX_INTENSITY_CAP  5
+#define ALPHA_MIN          60
+#define ALPHA_MAX          255
 
 // LEAP YEAR CHECK
 bool isLeapYear(int year) {
@@ -57,12 +61,16 @@ bool hasTaskOnDate(int day, int month, int year) {
 }
 
 // UTILITY TO FETCH TOTAL COMPLETED TASKS FOR A GIVEN DATE
+// Keys off dateCompleted (the day the task was actually finished), not the
+// due date — a task completed today should light up today, not on whatever
+// day it happened to be due.
 int getCompletedTaskCount(int day, int month, int year) {
     int count = 0;
     for (const auto &t : allTasks) {
-        if (t.isCompleted && t.dueDay == day && t.dueMonth == month && t.dueYear == year) {
-            count++;
-        }
+        if (!t.isCompleted || t.dateCompleted.empty()) continue;
+        int cy = 0, cm = 0, cd = 0;
+        sscanf(t.dateCompleted.c_str(), "%d-%d-%d", &cy, &cm, &cd);
+        if (cd == day && cm == month && cy == year) count++;
     }
     return count;
 }
@@ -91,12 +99,19 @@ void DrawGitHubHeatmap(int startX, int startY, int currentMonth, int currentYear
         // Determine activity metrics count
         int completedAmount = getCompletedTaskCount(d, currentMonth, currentYear);
 
-        // Classify standard GitHub contribution density thresholds
+        // No completions -> empty dark cell. Otherwise, keep the same green
+        // hue for every day but scale its transparency (alpha) with how many
+        // tasks were completed — a light wash for 1 task, fully solid once
+        // completions reach MAX_INTENSITY_CAP. No yellow/amber is ever used
+        // for pending tasks; this heatmap only reflects completions.
         Color cellColor = COLOR_EMPTY;
-        if (completedAmount == 1)               cellColor = COLOR_LEVEL_1;
-        else if (completedAmount == 2)          cellColor = COLOR_LEVEL_2;
-        else if (completedAmount >= 3 && completedAmount <= 4) cellColor = COLOR_LEVEL_3;
-        else if (completedAmount >= 5)          cellColor = COLOR_LEVEL_4;
+        if (completedAmount > 0) {
+            int capped = completedAmount > MAX_INTENSITY_CAP ? MAX_INTENSITY_CAP : completedAmount;
+            unsigned char alpha = (unsigned char)(ALPHA_MIN +
+                ((ALPHA_MAX - ALPHA_MIN) * (capped - 1)) / (MAX_INTENSITY_CAP - 1));
+            cellColor = COLOR_ACTIVE_BASE;
+            cellColor.a = alpha;
+        }
 
         // Calculate layout screen space metrics
         float posX = startX + (col * (CELL_SIZE + CELL_PADDING));
@@ -110,19 +125,27 @@ void DrawGitHubHeatmap(int startX, int startY, int currentMonth, int currentYear
         // Draw inner tracking indicator digits inside active boxes
         char dayStr[4];
         snprintf(dayStr, sizeof(dayStr), "%d", d);
-        int textWidth = MeasureText(dayStr, 9);
-        DrawText(dayStr, posX + (CELL_SIZE - textWidth)/2, posY + 4, 9, (completedAmount >= 3) ? BLACK : LIGHTGRAY);
+        int textWidth = MeasureText(dayStr, 10);
+        DrawText(dayStr, posX + (CELL_SIZE - textWidth)/2, posY + 7, 10, (completedAmount >= 3) ? BLACK : LIGHTGRAY);
     }
 
-    // Base UI Palette Indicator Legend Container
+    // Base UI Palette Indicator Legend Container — same green hue throughout,
+    // increasing opacity from left (empty / low activity) to right (high activity).
     int legendX = startX;
     int legendY = startY + (7 * (CELL_SIZE + CELL_PADDING)) + 20;
     DrawText("Less", legendX, legendY, 13, GRAY);
-    
-    Color legendPalette[] = { COLOR_EMPTY, COLOR_LEVEL_1, COLOR_LEVEL_2, COLOR_LEVEL_3, COLOR_LEVEL_4 };
+
     for (int i = 0; i < 5; i++) {
+        Color legColor;
+        if (i == 0) {
+            legColor = COLOR_EMPTY;
+        } else {
+            unsigned char a = (unsigned char)(ALPHA_MIN + ((ALPHA_MAX - ALPHA_MIN) * i) / 4);
+            legColor = COLOR_ACTIVE_BASE;
+            legColor.a = a;
+        }
         Rectangle legRect = { (float)(legendX + 45 + (i * 24)), (float)legendY - 2, 16, 16 };
-        DrawRectangleRounded(legRect, 0.25f, 4, legendPalette[i]);
+        DrawRectangleRounded(legRect, 0.25f, 4, legColor);
     }
     DrawText("More", legendX + 175, legendY, 13, GRAY);
 }

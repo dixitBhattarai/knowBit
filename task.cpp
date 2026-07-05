@@ -3,7 +3,8 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
-#include"raylib.h"
+#include <raylib.h>
+
 using namespace std;
 vector<Task> allTasks;
 string activeUsername = "";
@@ -13,6 +14,32 @@ Texture2D texMotivation;
 int activeUserStreak = 0;
 int activeUserMaxStreak = 0;
 int lastYear = 0, lastMonth = 0, lastDay = 0;
+int totalXP = 0; // Cumulative XP earned by completing tasks (persisted per-user)
+
+// ── XP / Leveling helpers ──
+int xpForPriority(int priority) {
+    // Higher priority tasks award proportionally more XP (10 XP per priority point)
+    if (priority < 1) priority = 1;
+    if (priority > 5) priority = 5;
+    return priority * 10;
+}
+int xpNeededForNextLevel() { return 100; } // Flat 100 XP per level, kept as a function for easy tuning later
+int levelForXP(int xp) { return (xp / xpNeededForNextLevel()) + 1; }
+int xpIntoCurrentLevel(int xp) { return xp % xpNeededForNextLevel(); }
+
+int nextAvailableTaskId() {
+    int maxId = 0;
+    for (const auto& t : allTasks) if (t.taskId > maxId) maxId = t.taskId;
+    return maxId + 1;
+}
+
+string todayDateString() {
+    time_t now = time(0);
+    tm *ltm = localtime(&now);
+    char buf[16];
+    strftime(buf, sizeof(buf), "%Y-%m-%d", ltm);
+    return string(buf);
+}
 void loadUserData() {
     allTasks.clear();
     ifstream file(activeUsername + ".txt");
@@ -36,6 +63,9 @@ void loadUserData() {
         getline(ss, temp, '|'); lastYear = stoi(temp);
         getline(ss, temp, '|'); lastMonth = stoi(temp);
         getline(ss, temp, '|'); lastDay = stoi(temp);
+        // totalXP is a newer field — older save files won't have it, so default to 0
+        if (getline(ss, temp, '|') && !temp.empty()) totalXP = stoi(temp);
+        else totalXP = 0;
     }
     time_t now = time(0);
     tm *ltm = localtime(&now);
@@ -77,18 +107,21 @@ void loadUserData() {
         getline(ss, temp, '|'); t.dueMonth = stoi(temp);
         getline(ss, temp, '|'); t.dueYear = stoi(temp);
         getline(ss, t.dateCreated, '|');
+        // dateCompleted is a newer trailing field — default to empty for older rows
+        if (!getline(ss, t.dateCompleted, '|')) t.dateCompleted = "";
         allTasks.push_back(t);
     }
     file.close();
     saveUserData(); 
 }
 void saveUserData() {
-    ofstream file(activeUsername + ".txt"); // Saves directly into dixit.txt, guest1.txt, etc.
-    file << activeUserStreak << "|" << activeUserMaxStreak << "|" << lastYear << "|" << lastMonth << "|" << lastDay << "\n";   
+    ofstream file(activeUsername + ".txt"); 
+    file << activeUserStreak << "|" << activeUserMaxStreak << "|" << lastYear << "|" << lastMonth << "|" << lastDay << "|" << totalXP << "\n";   
     for (const auto& t : allTasks) {
         file << t.taskId << "|" << t.taskName << "|" << t.taskDescription << "|" 
              << t.taskCategory << "|" << t.priority << "|" << (t.isCompleted ? "1" : "0") << "|" 
-             << t.daysToComplete << "|" << t.dueDay << "|" << t.dueMonth << "|" << t.dueYear << "|" << t.dateCreated << "\n";
+             << t.daysToComplete << "|" << t.dueDay << "|" << t.dueMonth << "|" << t.dueYear << "|" << t.dateCreated
+             << "|" << t.dateCompleted << "\n";
     }
     file.close();
 }
@@ -96,21 +129,10 @@ void addTask() {
     Task t;
     std::cout << "\n========== ADD TASK ==========\n";
 
-    bool isUnique = false;
-    while (!isUnique) {
-        std::cout << "Enter Task ID: ";
-        cin >> t.taskId; 
-        cin.ignore(); 
-
-        isUnique = true; 
-        for (const auto& existingTask : allTasks) {
-            if (existingTask.taskId == t.taskId) {
-                std::cout << "[!] ERROR: Task ID " << t.taskId << " already exists! Please enter a unique ID.\n\n";
-                isUnique = false; 
-                break; 
-            }
-        }
-    }
+    // Task ID is now auto-assigned — the user is never asked for one
+    t.taskId = nextAvailableTaskId();
+    t.dateCompleted = "";
+    cin.ignore();
     std::cout << "Enter Task Name: "; getline(cin, t.taskName);
     std::cout << "Enter Description: "; getline(cin, t.taskDescription);
     std::cout << "Enter Category: "; getline(cin, t.taskCategory);
@@ -185,9 +207,12 @@ void markCompleted() {
     for (auto& t : allTasks) {
         if (t.taskId == id) {
             t.isCompleted = true;
+            t.dateCompleted = todayDateString();
+            int gained = xpForPriority(t.priority);
+            totalXP += gained;
             saveUserData(); // Save automatically!
-            cout << "\nTask Marked as Complete!\n";
-            
+            cout << "\nTask Marked as Complete! (+" << gained << " XP)\n";
+            cout << "Total XP: " << totalXP << " | Level: " << levelForXP(totalXP) << "\n";
             showPopup = true;
             popupStartTime = GetTime();
             return;
@@ -223,6 +248,9 @@ void checkReminders() {
                 }
                 cout << "[!] URGENT: '" << t.taskName << "' is due in " << daysLeft << " days!\n";
                 cout << hoursLeft <<"hours!\n";
+
+                cout << hoursLeft << endl;
+
             }
         }
     }
