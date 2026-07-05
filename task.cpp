@@ -15,6 +15,7 @@ int activeUserStreak = 0;
 int activeUserMaxStreak = 0;
 int lastYear = 0, lastMonth = 0, lastDay = 0;
 int totalXP = 0; // Cumulative XP earned by completing tasks (persisted per-user)
+ProfileData profile;  // GitHub-style profile fields, persisted in "<username>_profile.txt"
 
 // ── XP / Leveling helpers ──
 int xpForPriority(int priority) {
@@ -40,7 +41,45 @@ string todayDateString() {
     strftime(buf, sizeof(buf), "%Y-%m-%d", ltm);
     return string(buf);
 }
+// ── Profile persistence ──
+// One pipe-delimited line, same convention as the streak/XP header line
+// written by saveUserData(). Kept in its own file so it never interferes
+// with existing "<username>.txt" task saves.
+void loadProfileData() {
+    ifstream file(activeUsername + "_profile.txt");
+    if (!file.is_open()) {
+        // First time this user opens Profile — stamp a join date and
+        // default the display name to the username, then create the file.
+        profile = ProfileData();
+        profile.joinDate = todayDateString();
+        profile.fullName = activeUsername;
+        saveProfileData();
+        return;
+    }
+    string line;
+    if (getline(file, line)) {
+        stringstream ss(line);
+        getline(ss, profile.joinDate, '|');
+        getline(ss, profile.fullName, '|');
+        getline(ss, profile.pronouns, '|');
+        getline(ss, profile.bio,      '|');
+        getline(ss, profile.website,  '|');
+        getline(ss, profile.twitter,  '|');
+        getline(ss, profile.linkedin, '|');
+    }
+    file.close();
+}
+
+void saveProfileData() {
+    ofstream file(activeUsername + "_profile.txt");
+    file << profile.joinDate << "|" << profile.fullName << "|" << profile.pronouns << "|"
+         << profile.bio << "|" << profile.website << "|" << profile.twitter << "|"
+         << profile.linkedin << "\n";
+    file.close();
+}
+
 void loadUserData() {
+    loadProfileData();   // profile fields are independent of task history — load first
     allTasks.clear();
     ifstream file(activeUsername + ".txt");
     if (!file.is_open()) {

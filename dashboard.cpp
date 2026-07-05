@@ -43,7 +43,7 @@ static const int SIDE_W = 190;
 static const int TOP_H  = 90;
 
 // ─── Navigation views ───────────────────────────────────────
-enum View { VIEW_DASH, VIEW_FOCUS, VIEW_STATS, VIEW_CALENDAR };
+enum View { VIEW_DASH, VIEW_FOCUS, VIEW_STATS, VIEW_CALENDAR, VIEW_PROFILE };
 
 // ─── Stats completion-graph time granularity ─────────────────
 enum CompletionGranularity { GRAN_DAILY, GRAN_WEEKLY, GRAN_MONTHLY };
@@ -83,6 +83,18 @@ struct FocusTimer {
     int     totalSecs   = 0;
     int     elapsed     = 0;
     double  startStamp  = 0.0;
+};
+
+// ─── Profile edit state ───────────────────────────────────────
+struct ProfileEditState {
+    bool editing      = false;
+    int  activeField  = 0;
+    char fullName[48] = "";
+    char pronouns[16] = "";
+    char bio[140]     = "";
+    char website[64]  = "";
+    char twitter[32]  = "";
+    char linkedin[64] = "";
 };
 
 // ─── Music state ────────────────────────────────────────────
@@ -137,6 +149,31 @@ static string currentTimeStr() {
     char buf[32];
     strftime(buf, sizeof(buf), "%I:%M %p", t);
     return buf;
+}
+
+// Word-wraps `text` inside maxWidth and draws it line by line.
+// Returns the total pixel height consumed, so callers can keep laying
+// out content below it (same idea as MeasureText, but for paragraphs).
+static float DrawWrappedText(const char* text, int x, int y, int maxWidth,
+                              int fontSize, Color color, int lineGap = 6) {
+    string word, line;
+    int cy = y;
+    istringstream iss{string(text)};
+    while (iss >> word) {
+        string test = line.empty() ? word : line + " " + word;
+        if (MeasureText(test.c_str(), fontSize) > maxWidth && !line.empty()) {
+            DrawText(line.c_str(), x, cy, fontSize, color);
+            cy += fontSize + lineGap;
+            line = word;
+        } else {
+            line = test;
+        }
+    }
+    if (!line.empty()) {
+        DrawText(line.c_str(), x, cy, fontSize, color);
+        cy += fontSize + lineGap;
+    }
+    return (float)(cy - y);
 }
 
 // Draw rounded rectangle helper
@@ -245,6 +282,7 @@ static bool DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
         { " O", "Focus Mode", VIEW_FOCUS    },
         { "||", "Statistics", VIEW_STATS    },
         { " C", "Calendar",   VIEW_CALENDAR },
+        { " P", "Profile",    VIEW_PROFILE  },
     };
     
     int ny = 155;
@@ -1562,6 +1600,269 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  Achievements — computed live from real task/XP/streak data.
+//  Nothing here is hardcoded to a specific user; unlock state is
+//  re-derived every frame from allTasks / totalXP / streak globals.
+// ─────────────────────────────────────────────────────────────
+struct Achievement { const char* icon; const char* name; bool earned; };
+
+static vector<Achievement> ComputeAchievements() {
+    int total = (int)allTasks.size();
+    int completed = 0;
+    bool hadCriticalDone = false;
+    for (auto& t : allTasks) {
+        if (t.isCompleted) {
+            completed++;
+            if (t.priority >= 5) hadCriticalDone = true;
+        }
+    }
+    int lvl = levelForXP(totalXP);
+
+    vector<Achievement> a;
+    a.push_back({ "1",   "First Task",     total >= 1 });
+    a.push_back({ ">10", "Task Slayer",    completed >= 10 });
+    a.push_back({ "100", "Century",        totalXP >= 100 });
+    a.push_back({ "3d",  "Streak Starter", activeUserStreak >= 3 });
+    a.push_back({ "7d",  "Streak Master",  activeUserMaxStreak >= 7 });
+    a.push_back({ "P5",  "High Roller",    hadCriticalDone });
+    a.push_back({ "ALL", "Perfectionist",  total > 0 && completed == total });
+    a.push_back({ "Lv2", "Rising Star",    lvl >= 2 });
+    return a;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Profile view — GitHub-style profile page wired to real user data.
+//  Left column: avatar / identity / bio / links.
+//  Right column: about card with live stats, then achievement grid.
+//  Clicking "Edit Profile" swaps the right column for an inline form
+//  (same DrawInputBox pattern used by the New Task modal) and persists
+//  via saveProfileData() into "<username>_profile.txt".
+// ─────────────────────────────────────────────────────────────
+static void DrawProfileView(Vector2 mouse) {
+    static ProfileEditState edit;
+    static Texture2D texAvatar = {0};
+    if (texAvatar.id == 0) texAvatar = LoadTexture("assets/user.png");
+
+    float lx = SIDE_W + 12, ly = TOP_H + 16;
+    float lw = WIN_W - SIDE_W - 24;
+    float lh = WIN_H - TOP_H - 24;
+    float leftW = 280.f, gap = 24.f;
+    float rx = lx + leftW + gap, rw = lw - leftW - gap;
+
+    // ═══════════════ LEFT COLUMN — Avatar / Identity / Links ═══════════════
+    float cx = lx + leftW / 2.0f;
+
+    DrawCircle((int)cx, (int)(ly + 64), 62, C_DARKGRAY);
+    DrawCircleLines((int)cx, (int)(ly + 64), 62, C_ORANGE);
+    if (texAvatar.id != 0) {
+        float scale = 90.0f / (float)texAvatar.width;
+        DrawTextureEx(texAvatar,
+            { cx - (texAvatar.width * scale) / 2.0f, ly + 64 - (texAvatar.height * scale) / 2.0f },
+            0.0f, scale, WHITE);
+    }
+
+    float ny = ly + 145;
+    string dispName = profile.fullName.empty() ? activeUsername : profile.fullName;
+    int nw = MeasureText(dispName.c_str(), 22);
+    DrawText(dispName.c_str(), (int)(cx - nw / 2.0f), (int)ny, 22, C_WHITE);
+    ny += 28;
+
+    string handle = "@" + activeUsername;
+    int hw = MeasureText(handle.c_str(), 15);
+    DrawText(handle.c_str(), (int)(cx - hw / 2.0f), (int)ny, 15, C_TEXT_DIM);
+    ny += 24;
+
+    if (!profile.pronouns.empty()) {
+        int pw = MeasureText(profile.pronouns.c_str(), 12) + 16;
+        Rectangle chip = { cx - pw / 2.0f, ny, (float)pw, 22 };
+        DrawRoundRect(chip, 0.5f, C_DARKGRAY);
+        DrawRoundRectLines(chip, 0.5f, 1.0f, C_BORDER);
+        DrawText(profile.pronouns.c_str(), (int)chip.x + 8, (int)chip.y + 5, 12, C_TEXT_DIM);
+        ny += 34;
+    } else {
+        ny += 10;
+    }
+
+    if (!profile.bio.empty()) {
+        ny += DrawWrappedText(profile.bio.c_str(), (int)lx, (int)ny, (int)leftW, 13, C_TEXT_DIM);
+        ny += 6;
+    } else if (!edit.editing) {
+        DrawText("No bio yet.", (int)lx, (int)ny, 13, C_TEXT_DIM);
+        ny += 26;
+    }
+
+    // Edit Profile button — reuses the app's existing edit icon asset
+    Rectangle editBtn = { lx, ny + 4, leftW, 34 };
+    bool editHov = CheckCollisionPointRec(mouse, editBtn);
+    DrawRoundRect(editBtn, 0.2f, editHov ? C_ORANGE : C_DARKGRAY);
+    if (texEdit.id != 0)
+        DrawTextureEx(texEdit, { editBtn.x + 10, editBtn.y + 9 }, 0.0f, 0.035f, editHov ? C_BG : C_WHITE);
+    DrawText(edit.editing ? "Editing..." : "Edit Profile",
+             (int)editBtn.x + 34, (int)editBtn.y + 9, 15, editHov ? C_BG : C_WHITE);
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && editHov && !edit.editing) {
+        edit.editing = true;
+        edit.activeField = 0;
+        snprintf(edit.fullName, sizeof(edit.fullName), "%s", profile.fullName.c_str());
+        snprintf(edit.pronouns, sizeof(edit.pronouns), "%s", profile.pronouns.c_str());
+        snprintf(edit.bio,      sizeof(edit.bio),      "%s", profile.bio.c_str());
+        snprintf(edit.website,  sizeof(edit.website),  "%s", profile.website.c_str());
+        snprintf(edit.twitter,  sizeof(edit.twitter),  "%s", profile.twitter.c_str());
+        snprintf(edit.linkedin, sizeof(edit.linkedin), "%s", profile.linkedin.c_str());
+    }
+    ny = editBtn.y + editBtn.height + 20;
+
+    // Links — clickable, opens the system's default browser via raylib's OpenURL
+    DrawLine((int)lx, (int)ny, (int)(lx + leftW), (int)ny, C_BORDER);
+    ny += 16;
+    DrawText("LINKS", (int)lx, (int)ny, 11, C_TEXT_DIM);
+    ny += 20;
+
+    struct LinkRow { const char* label; string* value; Color col; };
+    LinkRow links[] = {
+        { "Website",  &profile.website,  C_BLUE   },
+        { "Twitter",  &profile.twitter,  C_TEAL   },
+        { "LinkedIn", &profile.linkedin, C_PURPLE },
+    };
+    bool anyLink = false;
+    for (auto& lr : links) {
+        if (lr.value->empty()) continue;
+        anyLink = true;
+        Rectangle row = { lx, ny, leftW, 24 };
+        bool hov = CheckCollisionPointRec(mouse, row);
+        string txt = string(lr.label) + ":  " + *lr.value;
+        DrawText(txt.c_str(), (int)lx, (int)ny + 4, 13, hov ? lr.col : C_TEXT_DIM);
+        if (hov && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            string url = *lr.value;
+            if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0)
+                url = "https://" + url;
+            OpenURL(url.c_str());
+        }
+        ny += 26;
+    }
+    if (!anyLink) { DrawText("No links added yet.", (int)lx, (int)ny, 12, C_TEXT_DIM); ny += 26; }
+
+    // Member-since footer, pinned near the bottom of the left column
+    string joined = "Joined " + (profile.joinDate.empty() ? string("recently") : profile.joinDate);
+    DrawText(joined.c_str(), (int)lx, (int)(ly + lh - 18), 12, C_TEXT_DIM);
+
+    // ═══════════════ RIGHT COLUMN ═══════════════
+    if (edit.editing) {
+        // ── Inline edit form (same interaction pattern as DrawNewTaskModal) ──
+        Rectangle box = { rx, ly, rw, 420 };
+        DrawRoundRect(box, 0.03f, C_PANEL);
+        DrawRoundRectLines(box, 0.03f, 1.5f, C_ORANGE);
+        DrawText("Edit Profile", (int)box.x + 20, (int)box.y + 16, 18, C_ORANGE);
+
+        struct Field { const char* label; char* buf; int maxLen; };
+        Field fields[] = {
+            { "Full Name",      edit.fullName, 48  },
+            { "Pronouns",       edit.pronouns, 16  },
+            { "Bio",            edit.bio,      140 },
+            { "Website",        edit.website,  64  },
+            { "Twitter handle", edit.twitter,  32  },
+            { "LinkedIn",       edit.linkedin, 64  },
+        };
+        const int FCOUNT = 6;
+        float fx = box.x + 20, fy = box.y + 60, fw = box.width - 40, fh = 36;
+
+        for (int i = 0; i < FCOUNT; i++) {
+            Rectangle r = { fx, fy + i * 56.0f, fw, fh };
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, r))
+                edit.activeField = i;
+            DrawInputBox(fields[i].label, fields[i].buf, r, edit.activeField == i);
+        }
+
+        if (IsKeyPressed(KEY_TAB)) edit.activeField = (edit.activeField + 1) % FCOUNT;
+        HandleTextInput(fields[edit.activeField].buf, fields[edit.activeField].maxLen,
+                        IsKeyPressed(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
+
+        Rectangle saveBtn = { fx, fy + FCOUNT * 56.0f + 8, fw / 2 - 8, 38 };
+        Rectangle canBtn  = { fx + fw / 2 + 8, fy + FCOUNT * 56.0f + 8, fw / 2 - 8, 38 };
+        bool saveHov = CheckCollisionPointRec(mouse, saveBtn);
+        bool canHov  = CheckCollisionPointRec(mouse, canBtn);
+
+        DrawRoundRect(saveBtn, 0.2f, saveHov ? C_GREEN : C_DARKGRAY);
+        DrawText("Save", (int)saveBtn.x + 20, (int)saveBtn.y + 10, 16, saveHov ? C_BG : C_WHITE);
+        DrawRoundRect(canBtn, 0.2f, canHov ? C_RED : C_DARKGRAY);
+        DrawText("Cancel", (int)canBtn.x + 20, (int)canBtn.y + 10, 16, canHov ? C_WHITE : C_TEXT_DIM);
+
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (saveHov) {
+                profile.fullName = edit.fullName;
+                profile.pronouns = edit.pronouns;
+                profile.bio      = edit.bio;
+                profile.website  = edit.website;
+                profile.twitter  = edit.twitter;
+                profile.linkedin = edit.linkedin;
+                saveProfileData();
+                edit.editing = false;
+            } else if (canHov) {
+                edit.editing = false;
+            }
+        }
+        return; // Skip the read-only About/Achievements while the form is open
+    }
+
+    // ── About card ──
+    int total = (int)allTasks.size();
+    int completed = 0;
+    for (auto& t : allTasks) if (t.isCompleted) completed++;
+
+    Rectangle about = { rx, ly, rw, 190 };
+    DrawRoundRect(about, 0.03f, C_PANEL);
+    DrawRoundRectLines(about, 0.03f, 1.0f, C_BORDER);
+    DrawText("About", (int)about.x + 20, (int)about.y + 16, 16, C_WHITE);
+
+    string aboutBio = profile.bio.empty() ? "This user hasn't written a bio yet." : profile.bio;
+    DrawWrappedText(aboutBio.c_str(), (int)about.x + 20, (int)about.y + 46, (int)about.width - 40, 14, C_TEXT_DIM);
+
+    float vy = about.y + about.height - 46;
+    DrawLine((int)about.x + 20, (int)vy - 14, (int)(about.x + about.width - 20), (int)vy - 14, C_BORDER);
+
+    struct Vital { const char* label; string value; Color col; };
+    char xpBuf[24], streakBuf[32], taskBuf[24], lvlBuf[24];
+    snprintf(xpBuf, sizeof(xpBuf), "%d XP", totalXP);
+    snprintf(streakBuf, sizeof(streakBuf), "%d days (best %d)", activeUserStreak, activeUserMaxStreak);
+    snprintf(taskBuf, sizeof(taskBuf), "%d / %d done", completed, total);
+    snprintf(lvlBuf, sizeof(lvlBuf), "Level %d", levelForXP(totalXP));
+    Vital vitals[] = {
+        { "LEVEL",  lvlBuf,    C_PURPLE },
+        { "XP",     xpBuf,     C_PURPLE },
+        { "STREAK", streakBuf, C_ORANGE },
+        { "TASKS",  taskBuf,   C_GREEN  },
+    };
+    float vw = (about.width - 40) / 4.0f;
+    for (int i = 0; i < 4; i++) {
+        float vx = about.x + 20 + i * vw;
+        DrawText(vitals[i].label, (int)vx, (int)vy, 10, C_TEXT_DIM);
+        DrawText(vitals[i].value.c_str(), (int)vx, (int)vy + 14, 14, vitals[i].col);
+    }
+
+    // ── Achievements grid ──
+    float ay = about.y + about.height + 20;
+    DrawText("Achievements", (int)rx, (int)ay, 16, C_WHITE);
+    ay += 30;
+
+    vector<Achievement> ach = ComputeAchievements();
+    int cols = 4;
+    float cellW = rw / cols, cellH = 118;
+    for (size_t i = 0; i < ach.size(); i++) {
+        int col = (int)i % cols, row = (int)i / cols;
+        float bx = rx + col * cellW + cellW / 2.0f;
+        float by = ay + row * cellH + 50;
+        Color hexCol = ach[i].earned ? C_ORANGE : C_BORDER;
+        Color txtCol = ach[i].earned ? C_WHITE  : C_TEXT_DIM;
+        DrawPoly({ bx, by }, 6, 34, 90, ach[i].earned ? Color{255,128,0,40} : Color{40,55,75,40});
+        DrawPolyLines({ bx, by }, 6, 34, 90, hexCol);
+        int iw = MeasureText(ach[i].icon, 14);
+        DrawText(ach[i].icon, (int)(bx - iw / 2.0f), (int)(by - 7), 14, hexCol);
+        int nwid = MeasureText(ach[i].name, 12);
+        DrawText(ach[i].name, (int)(bx - nwid / 2.0f), (int)(by + 42), 12, txtCol);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Main Dashboard() — one Raylib window, all views
 // ─────────────────────────────────────────────────────────────
 void Dashboard() {
@@ -1642,6 +1943,9 @@ void Dashboard() {
                 break;
             case VIEW_CALENDAR:
                 DrawCalView(calMonth, calYear, mouse);
+                break;
+            case VIEW_PROFILE:
+                DrawProfileView(mouse);
                 break;
         }
 
