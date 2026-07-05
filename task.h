@@ -16,7 +16,7 @@ struct Task {
     int dueMonth;
     int dueYear;
     std::string dateCreated;
-    std::string dateCompleted; // <-- ADD THIS LINE ("YYYY-MM-DD" or "NONE")
+    std::string dateCompleted; 
 };
 extern std::vector<Task> allTasks;
 extern std::string activeUsername;
@@ -34,4 +34,5 @@ void removeTask();
 void markCompleted();
 void displayHistory();
 void checkReminders();
+void logoutUser();
 #endif

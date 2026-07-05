@@ -1,9 +1,3 @@
-// ============================================================
-//  knowBit v1.0  –  GUI Dashboard  (dashboard.cpp)
-//  Replaces arohaMain.cpp's CLI Dashboard() loop.
-//  Single Raylib window; no terminal switching.
-// ============================================================
-
 #include "dashboard.h"
 #include "task.h"
 #include "calendar.h"   // displayCalendar() draws into the same window
@@ -19,7 +13,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <sstream>
-
+static bool wantsToLoadMusic = false;
 using namespace std;
 extern Font customFont;
 extern Texture2D texLogo, texStreak, texClock, texMusic, texCalendar, texEdit, texDelete;
@@ -203,24 +197,20 @@ static string OpenFileDialog(const char* filter = "*.mp3 *.ogg *.wav *.flac") {
 // ─────────────────────────────────────────────────────────────
 //  Sidebar
 // ─────────────────────────────────────────────────────────────
-static void DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
+// CHANGED: Now returns a bool instead of void!
+static bool DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
     DrawRectangle(0, 0, SIDE_W, WIN_H, C_SIDEBAR);
     DrawLine(SIDE_W, 0, SIDE_W, WIN_H, C_BORDER);
 
-    // ── Logo and Title (Perfectly level with Top Bar greeting) ──
+    // ── Logo and Title ──
     DrawTextureEx(texLogo, { 15, 18 }, 0.0f, 0.07f, WHITE);
     DrawText("know", 65, 22, 22, WHITE);
     DrawText("Bit", 65 + MeasureText("know", 22), 22, 22, C_ORANGE);
     DrawText("v1.0", 65 + MeasureText("knowBit", 22) + 6, 30, 10, GRAY);
 
     // ── Profile & Streak Info Box ──
-    // ── Profile & Streak Info Box ──
     DrawRoundRect({12, 80, SIDE_W-24, 55}, 0.15f, C_DARKGRAY);
-
-    // FIX: Moved icon up (Y: 88) and enlarged scale to 0.09f to span both rows
     DrawTextureEx(texStreak, {18, 88}, 0.0f, 0.09f, WHITE); 
-
-    // Both text rows start at X: 58 so they sit beautifully next to the larger flame
     DrawText(activeUsername.c_str(), 58, 86, 15, C_WHITE);
 
     char strk[32]; snprintf(strk, sizeof(strk), "%d Day Streak", activeUserStreak);
@@ -234,6 +224,7 @@ static void DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
         { "||", "Statistics", VIEW_STATS    },
         { " C", "Calendar",   VIEW_CALENDAR },
     };
+    
     int ny = 155;
     for (auto& item : items) {
         bool sel = (view == item.v);
@@ -247,58 +238,46 @@ static void DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
         ny += 46;
     }
 
-    // ── Calendar Dynamic Hint Text ──
-    if (view == VIEW_CALENDAR) {
-        DrawText("Please use Arrows keys", 15, ny + 20, 12, C_TEXT_DIM);
-    }
-
-    // ── Lo-fi Music Interactive Engine ──
-// ── Lo-fi Music Interactive Engine ──
-    Rectangle musicBar = {8, (float)(WIN_H - 58), (float)(SIDE_W-16), 38};
+    // ── Lo-fi Music Interactive Engine (MOVED HIGHER: WIN_H - 105) ──
+    Rectangle musicBar = {8, (float)(WIN_H - 105), (float)(SIDE_W-16), 38};
     bool musicHov = CheckCollisionPointRec(mouse, musicBar);
     DrawRoundRect(musicBar, 0.2f, C_DARKGRAY);
     DrawRoundRectLines(musicBar, 0.2f, 1.0f, musicHov ? C_ORANGE : C_BORDER);
     
-    DrawTextureEx(texMusic, {16, (float)(WIN_H - 46)}, 0.0f, 0.05f, WHITE);
-    DrawText("   Lo-fi Music", 16, WIN_H - 46, 13, C_TEXT_DIM);
-    DrawText(music.on ? "ON" : "OFF", SIDE_W - 44, WIN_H - 46, 13, music.on ? C_GREEN : C_TEXT_DIM);
+    DrawTextureEx(texMusic, {16, (float)(WIN_H - 93)}, 0.0f, 0.05f, WHITE);
+    DrawText("   Lo-fi Music", 16, WIN_H - 93, 13, C_TEXT_DIM);
+    DrawText(music.on ? "ON" : "OFF", SIDE_W - 44, WIN_H - 93, 13, music.on ? C_GREEN : C_TEXT_DIM);
+    
+    // ── THE FIX: Use RELEASED instead of PRESSED ──
+    // ── THE BULLETPROOF FIX: The Cooldown Timer ──
+    static double lastMusicClick = 0.0; // Keeps track of when we last clicked
 
+    // ── THE NEW SIDEBAR LOGIC (No freezing allowed here) ──
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && musicHov) {
-        music.on = !music.on;
-    }
-
-    // ── Pop-up Audio Track Selection Menu Window ──
-    if (music.on) {
-        // FIX: Using a local static variable to track the active song index safely
-        static int selectedTrack = 0; 
-
-        Rectangle popupMenu = {8, (float)(WIN_H - 210), (float)(SIDE_W - 16), 145};
-        DrawRoundRect(popupMenu, 0.15f, C_PANEL);
-        DrawRoundRectLines(popupMenu, 0.15f, 1.0f, C_ORANGE);
-        
-        DrawText("Select Track:", (int)popupMenu.x + 12, (int)popupMenu.y + 10, 12, C_ORANGE);
-        
-        const char* tracks[] = { "1. Lofi Chill Beats", "2. Study Focus Session", "3. Midnight Cafe Vibes" };
-        int trackY = popupMenu.y + 32;
-        
-        for (int i = 0; i < 3; i++) {
-            Rectangle trackRow = { popupMenu.x + 6, (float)trackY, popupMenu.width - 12, 26 };
-            bool rowHov = CheckCollisionPointRec(mouse, trackRow);
-            bool isCurrent = (selectedTrack == i); 
-            
-            if (isCurrent)   DrawRectangleRec(trackRow, {255, 128, 0, 40});
-            else if (rowHov) DrawRectangleRec(trackRow, {255, 255, 255, 15});
-            
-            DrawText(tracks[i], (int)trackRow.x + 8, (int)trackRow.y + 6, 11, 
-                     isCurrent ? C_ORANGE : (rowHov ? C_WHITE : C_TEXT_DIM));
-            
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && rowHov) {
-                selectedTrack = i;
-                // Optional: If you have a play track function, call it here using 'i'
-            }
-            trackY += 30;
+        if (music.on) {
+            // Turn music off instantly
+            if (music.loaded) StopMusicStream(music.track);
+            music.on = false;
+        } else {
+            // Tell the main loop to open the file picker!
+            wantsToLoadMusic = true;
         }
     }
+
+    // ── Logout Button (MOVED LOWER: WIN_H - 58) ──
+    Rectangle logoutBtn = {8, (float)(WIN_H - 58), (float)(SIDE_W-16), 38};
+    bool logHov = CheckCollisionPointRec(mouse, logoutBtn);
+    DrawRoundRect(logoutBtn, 0.2f, C_DARKGRAY);
+    DrawRoundRectLines(logoutBtn, 0.2f, 1.0f, logHov ? RED : C_BORDER);
+    
+    DrawText("   Logout", 16, WIN_H - 46, 13, logHov ? WHITE : RED);
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && logHov) {
+        logoutUser();
+        return true; // <--- This tells the main dashboard loop to exit!
+    }
+
+    return false; // Returns false every frame we don't click logout
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -332,7 +311,7 @@ static void DrawTopBar(double sessionSecs) {
     Rectangle tc = {(float)(WIN_W - 250), 18, 230, 58};
     DrawRoundRect(tc, 0.2f, C_DARKGRAY);
     DrawRoundRectLines(tc, 0.2f, 1.5f, C_GREEN);
-    DrawTextureEx(texClock, {tc.x + 10, tc.y + 10}, 0.0f, 0.08f, WHITE);
+    DrawTextureEx(texClock, {tc.x - 12, tc.y + 0}, 0.0f, 0.12f, WHITE);
     string sess = fmtSession(sessionSecs);
     DrawText(sess.c_str(), (int)tc.x + 44, (int)tc.y + 8, 26, C_GREEN);
     DrawText("Daily App Time", (int)tc.x + 10, (int)tc.y + 38, 12, C_TEXT_DIM);
@@ -570,7 +549,7 @@ static CardAction DrawTaskCard(const Task& t, int idx, float x, float y, float w
             // Edit icon asset (Top Right Corner stack placement)
             Rectangle edBtn = {x + w - 36, y + 14, 24, 24}; 
             bool eh = CheckCollisionPointRec(mouse, edBtn);
-            DrawTextureEx(texEdit, {edBtn.x, edBtn.y}, 0.0f, 0.05f, eh ? LIGHTGRAY : WHITE);
+            DrawTextureEx(texEdit, {edBtn.x, edBtn.y}, 0.0f, 1.5f, eh ? LIGHTGRAY : WHITE);
             
             if (eh) {
                 Rectangle tip = {edBtn.x - 48, edBtn.y + 2, 42, 20};
@@ -581,7 +560,7 @@ static CardAction DrawTaskCard(const Task& t, int idx, float x, float y, float w
             // Delete icon asset (Stacked directly underneath edit button row)
             Rectangle delBtn = {x + w - 36, y + 46, 24, 24}; 
             bool dh = CheckCollisionPointRec(mouse, delBtn);
-            DrawTextureEx(texDelete, {delBtn.x, delBtn.y}, 0.0f, 0.05f, dh ? LIGHTGRAY : WHITE);
+            DrawTextureEx(texDelete, {delBtn.x, delBtn.y+3}, 0.0f, 0.1f, dh ? LIGHTGRAY : WHITE);
             
             if (dh) {
                 Rectangle tip = {delBtn.x - 58, delBtn.y + 2, 52, 20};
@@ -691,6 +670,9 @@ static void DrawTaskList(vector<Task>& tasks, float x, float y,
 // ─────────────────────────────────────────────────────────────
 //  Focus Mode right panel
 // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+//  Focus Mode right panel
+// ─────────────────────────────────────────────────────────────
 static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
     float px = WIN_W / 2.0f;
     float pw = WIN_W - px;
@@ -773,7 +755,7 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
 
     // Task info below timer
     if (taskIdx >= 0 && taskIdx < (int)allTasks.size()) {
-        const Task& t = allTasks[taskIdx];
+        Task& t = allTasks[taskIdx]; // FIX: Removed const so we can change completion status
         float ty = cy + 170.0f;
         int nw = MeasureText(t.taskName.c_str(), 18);
         DrawText(t.taskName.c_str(), (int)(cx-nw/2), (int)ty, 18, C_WHITE);
@@ -781,6 +763,7 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
         if (desc.size()>60) desc=desc.substr(0,57)+"...";
         int dw = MeasureText(desc.c_str(), 13);
         DrawText(desc.c_str(), (int)(cx-dw/2), (int)ty+28, 13, C_TEXT_DIM);
+        
         // Type tag
         if (!t.taskCategory.empty()) {
             int tw2 = MeasureText(t.taskCategory.c_str(),13)+16;
@@ -788,8 +771,27 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
             DrawRoundRect(tr,0.4f,C_DARKGRAY);
             DrawText(t.taskCategory.c_str(),(int)tr.x+8,(int)tr.y+5,13,C_TEAL);
         }
+
+        // ── ADDED: TASK COMPLETION ACTION UI ──
+        if (!t.isCompleted) {
+            Rectangle doneBtn = { cx - 70, ty + 90, 140, 34 };
+            bool dbHov = CheckCollisionPointRec(mouse, doneBtn);
+            DrawRoundRect(doneBtn, 0.3f, dbHov ? C_GREEN : C_DARKGRAY);
+            DrawRoundRectLines(doneBtn, 0.3f, 1.0f, dbHov ? C_GREEN : C_BORDER);
+            DrawText("Mark as Done", (int)doneBtn.x + 22, (int)doneBtn.y + 9, 14, dbHov ? C_BG : C_WHITE);
+
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dbHov) {
+                t.isCompleted = true;
+                saveUserData(); // Instantly write the new data state to disk
+            }
+        } else {
+            Rectangle doneBadge = { cx - 60, ty + 90, 120, 30 };
+            DrawRoundRect(doneBadge, 0.3f, { 0, 255, 65, 40 }); // Semi-transparent green background fill
+            DrawRoundRectLines(doneBadge, 0.3f, 1.0f, C_GREEN);
+            DrawText("Completed", (int)doneBadge.x + 16, (int)doneBadge.y + 8, 14, C_GREEN);
+        }
     } else {
-        DrawText("Select a task from the list →", (int)(cx-100),(int)(cy+170),13,C_TEXT_DIM);
+        DrawText("Select a task from the list ", (int)(cx-100),(int)(cy+170),13,C_TEXT_DIM);
     }
 }
 
@@ -897,10 +899,6 @@ static void DrawStatsView(float& scroll, ModalState& modal, Vector2 mouse) {
     DrawRoundRect(barFg,0.5f,C_GREEN);
     char pct[16]; snprintf(pct,sizeof(pct),"%.0f%%",rate);
     DrawText(pct,(int)(lx+lw*0.6f+8),(int)(ly+51),13,C_GREEN);
-
-    DrawText("Hover a task and click ▤ for full stats",
-             (int)lx,(int)(ly+78),12,C_TEXT_DIM);
-
     int dummy=-1;
     DrawTaskList(allTasks, lx, ly+96, lw, lh-96, scroll, mouse,
                  CARD_STATS, modal, dummy);
@@ -938,7 +936,7 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
 
     string heading = calMonthName(calMonth) + "  " + to_string(calYear);
     DrawText(heading.c_str(),(int)lx,(int)ly,22,C_ORANGE);
-    // DrawText(" Please Use Arrow keys to navigate months",(int)lx,(int)ly+32,13,C_TEXT_DIM);
+    DrawText(" Please Use Arrow keys to navigate months",(int)lx,(int)ly+32,13,C_TEXT_DIM);
 
     // Day-of-week headers
     const char* dow[]={"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
@@ -1031,70 +1029,85 @@ void Dashboard() {
     g_sessionStart = GetTime();
 
     // ─── Main loop ──────────────────────────────────────────
+    // ─── Main loop ──────────────────────────────────────────
     while (!WindowShouldClose()) {
         Vector2 mouse = GetMousePosition();
         double sessionSecs = GetTime() - g_sessionStart;
 
-        // Music update
-        if (music.loaded && music.on) UpdateMusicStream(music.track);
+        // ── Music Engine Tracking Layer ──
+        if (wantsToLoadMusic) {
+            wantsToLoadMusic = false; // Reset flag layer
+            string filepath = OpenFileDialog(); 
+            if (!filepath.empty()) {
+                filepath.erase(filepath.find_last_not_of(" \n\r\t") + 1); // Clean Linux string termination
+                if (music.loaded) {
+                    StopMusicStream(music.track);
+                    UnloadMusicStream(music.track);
+                }
+                music.track = LoadMusicStream(filepath.c_str());
+                if (music.track.frameCount > 0) {
+                    PlayMusicStream(music.track);
+                    music.loaded = true;
+                    music.on = true;
+                    cout << "\n>>> [SUCCESS] TRACK LOADED SAFELY!\n";
+                }
+            }
+        }
 
+        if (music.loaded && music.on) {
+            UpdateMusicStream(music.track);
+        }
 
-        // Detect if we're in new-task modal vs edit modal
-        bool showNewTask = (modal.open && modal.taskIdx == -1);
-        bool showEdit    = (modal.open && modal.taskIdx >= 0);
-
+        // ── Drawing Operations Start Phase ──
         BeginDrawing();
         ClearBackground(C_BG);
 
-        // ── Sidebar + Topbar (always) ──
-        DrawSidebar(view, music, mouse);
+        // ── Global Interface Containers (Always Visible) ──
+        if (DrawSidebar(view, music, mouse)) {
+            EndDrawing(); // Safely wrap render pipelines before function termination
+            return;       // Destructively exits dashboard window execution context to primary shell
+        }
         DrawTopBar(sessionSecs);
 
-        // ── Content area ──
-        if (!modal.open) {
-            switch (view) {
-                case VIEW_DASH:
-                    DrawDashView(dashScroll, sortMode, modal, mouse);
-                    break;
-                case VIEW_FOCUS:
-                    DrawFocusView(focusScroll, modal, focTimer, focusTaskIdx, mouse);
-                    break;
-                case VIEW_STATS:
-                    DrawStatsView(statsScroll, modal, mouse);
-                    break;
-                case VIEW_CALENDAR:
-                    DrawCalView(calMonth, calYear, mouse);
-                    break;
-            }
-        } else {
-            // Draw the underlying view dimmed, then overlay
-            switch (view) {
-                case VIEW_DASH:
-                    DrawDashView(dashScroll, sortMode, modal, mouse);
-                    break;
-                case VIEW_FOCUS:
-                    DrawFocusView(focusScroll, modal, focTimer, focusTaskIdx, mouse);
-                    break;
-                default: break;
-            }
-            if (showNewTask) DrawNewTaskModal(modal, mouse);
-            if (showEdit)    DrawEditModal(modal, mouse);
+        // ── View Router Content Engine Layout (Unlocks Calendar & Statistics) ──
+        switch (view) {
+            case VIEW_DASH:
+                DrawDashView(dashScroll, sortMode, modal, mouse);
+                break;
+            case VIEW_FOCUS:
+                DrawFocusView(focusScroll, modal, focTimer, focusTaskIdx, mouse);
+                break;
+            case VIEW_STATS:
+                DrawStatsView(statsScroll, modal, mouse);
+                break;
+            case VIEW_CALENDAR:
+                DrawCalView(calMonth, calYear, mouse);
+                break;
         }
 
-        // ── Reminder banner ──
-        {
-            time_t nowT=time(0);
-            int urgent=0;
-            for(auto& t:allTasks) if(!t.isCompleted){
-                tm dl={0}; dl.tm_year=t.dueYear-1900; dl.tm_mon=t.dueMonth-1; dl.tm_mday=t.dueDay;
-                double secs=difftime(mktime(&dl),nowT);
-                if(secs/(86400.0)<2.0) urgent++;
+        // ── Popup Modal Overlay System Layer (Stays completely crash-proof) ──
+        if (modal.open) {
+            if (modal.taskIdx == -1) {
+                DrawNewTaskModal(modal, mouse); // Opens New Form Input Box Layer
+            } else {
+                DrawEditModal(modal, mouse);    // Passes direct reference array layout safely
             }
-            if(urgent>0){
-                char bang[64]; snprintf(bang,sizeof(bang),"!! %d task(s) due within 2 days!",urgent);
-                int bw=MeasureText(bang,14)+24;
-                DrawRoundRect({(float)(WIN_W/2-bw/2),2,(float)bw,26},0.4f,{180,40,40,220});
-                DrawText(bang,WIN_W/2-bw/2+12,6,14,C_WHITE);
+        }
+
+        // ── Reminder Banner Overlay Notification ──
+        {
+            time_t nowT = time(0);
+            int urgent = 0;
+            for (auto& t : allTasks) if (!t.isCompleted) {
+                tm dl = {0}; dl.tm_year = t.dueYear - 1900; dl.tm_mon = t.dueMonth - 1; dl.tm_mday = t.dueDay;
+                double secs = difftime(mktime(&dl), nowT);
+                if (secs / (86400.0) < 2.0) urgent++;
+            }
+            if (urgent > 0) {
+                char bang[64]; snprintf(bang, sizeof(bang), "!! %d task(s) due within 2 days!", urgent);
+                int bw = MeasureText(bang, 14) + 24;
+                DrawRoundRect({(float)(WIN_W / 2 - bw / 2), 2, (float)bw, 26}, 0.4f, {180, 40, 40, 220});
+                DrawText(bang, WIN_W / 2 - bw / 2 + 12, 6, 14, C_WHITE);
             }
         }
 
