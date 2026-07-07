@@ -5,8 +5,11 @@
 #include <ctime>
 #include <cstdio> // Needed for remove() to delete remember.txt
 #include "task.h" 
+#define DrawText(text, x, y, size, color) DrawTextEx(robotoRegular, text, {(float)(x), (float)(y)}, (float)(size), 1.0f, color)
 
 using namespace std;
+extern Font robotoRegular;
+ extern Font robotoBold;
 
 bool registerUser(string username, string password) {
     ofstream file("users.txt", ios::app); 

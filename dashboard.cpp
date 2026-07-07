@@ -13,10 +13,13 @@
 #include <cstdio>
 #include <algorithm>
 #include <sstream>
+#define DrawText(text, x, y, size, color) DrawTextEx(robotoRegular, text, {(float)(x), (float)(y)}, (float)(size), 1.0f, color)
 static bool wantsToLoadMusic = false;
 using namespace std;
 extern Font customFont;
 extern Texture2D texLogo, texStreak, texClock, texMusic, texCalendar, texEdit, texDelete;
+extern Font robotoRegular;
+ extern Font robotoBold;
 
 // ─── Palette ────────────────────────────────────────────────
 static const Color C_BG         = { 11,  17,  26, 255 };

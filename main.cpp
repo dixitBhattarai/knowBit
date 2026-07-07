@@ -6,12 +6,18 @@
 bool runLoginGUI();   
 Font customFont;
 Texture2D texLogo, texStreak, texClock, texMusic, texCalendar, texEdit, texDelete;
+Font robotoRegular;
+Font robotoBold;
 
 int main() {
     // Put this line right BEFORE InitWindow() in your main file
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
 
     InitWindow(1280, 800, "knowBit v1.0");
+    robotoRegular = LoadFontEx("assets/Roboto-Regular.ttf", 20, NULL, 0);
+    robotoBold = LoadFontEx("assets/Roboto-Bold.ttf", 48, NULL, 0); 
+    SetTextureFilter(robotoRegular.texture, TEXTURE_FILTER_BILINEAR);
+     SetTextureFilter(robotoBold.texture, TEXTURE_FILTER_BILINEAR);
 
 // After loading your font, add this to smooth the text:
     SetTextureFilter(customFont.texture, TEXTURE_FILTER_BILINEAR);
