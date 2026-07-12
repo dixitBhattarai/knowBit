@@ -64,7 +64,7 @@ void loadProfileData() {
         getline(ss, profile.pronouns, '|');
         getline(ss, profile.bio,      '|');
         getline(ss, profile.website,  '|');
-        getline(ss, profile.twitter,  '|');
+        getline(ss, profile.socials,  '|');
         getline(ss, profile.linkedin, '|');
     }
     file.close();
@@ -73,7 +73,7 @@ void loadProfileData() {
 void saveProfileData() {
     ofstream file(activeUsername + "_profile.txt");
     file << profile.joinDate << "|" << profile.fullName << "|" << profile.pronouns << "|"
-         << profile.bio << "|" << profile.website << "|" << profile.twitter << "|"
+         << profile.bio << "|" << profile.website << "|" << profile.socials << "|"
          << profile.linkedin << "\n";
     file.close();
 }

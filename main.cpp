@@ -34,12 +34,19 @@ int main() {
     printf("\n\n>>> SUCCESS: EDIT IMAGE LOADED PERFECTLY <<<\n\n");
 }
     texDelete = LoadTexture("assets/delete.png");  
-    bool loginSuccess = runLoginGUI();
-    if (loginSuccess) {
+    // Keep cycling between the login screen and the dashboard: logging out
+    // takes you back to login instead of closing the whole program. Only a
+    // cancelled/failed login or actually closing the window ends this loop.
+    bool running = true;
+    while (running) {
+        bool loginSuccess = runLoginGUI();
+        if (!loginSuccess) {
+            std::cout << "\n[knowBit]: Login cancelled. Goodbye.\n";
+            break;
+        }
         loadUserData();
-        Dashboard();   
-    } else {
-        std::cout << "\n[knowBit]: Login cancelled. Goodbye.\n";
+        bool loggedOut = Dashboard(); // true = user clicked Logout, false = window was closed
+        running = loggedOut;
     }
     UnloadFont(customFont);
     UnloadTexture(texLogo);

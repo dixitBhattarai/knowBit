@@ -102,7 +102,7 @@ struct ProfileEditState {
     char pronouns[16] = "";
     char bio[140]     = "";
     char website[64]  = "";
-    char twitter[32]  = "";
+    char socials[32]  = "";
     char linkedin[64] = "";
 };
 
@@ -1889,7 +1889,7 @@ static void DrawProfileView(Vector2 mouse) {
         snprintf(edit.pronouns, sizeof(edit.pronouns), "%s", profile.pronouns.c_str());
         snprintf(edit.bio,      sizeof(edit.bio),      "%s", profile.bio.c_str());
         snprintf(edit.website,  sizeof(edit.website),  "%s", profile.website.c_str());
-        snprintf(edit.twitter,  sizeof(edit.twitter),  "%s", profile.twitter.c_str());
+        snprintf(edit.socials,  sizeof(edit.socials),  "%s", profile.socials.c_str());
         snprintf(edit.linkedin, sizeof(edit.linkedin), "%s", profile.linkedin.c_str());
     }
     ny = editBtn.y + editBtn.height + 20;
@@ -1903,7 +1903,7 @@ static void DrawProfileView(Vector2 mouse) {
     struct LinkRow { const char* label; string* value; Color col; };
     LinkRow links[] = {
         { "Website",  &profile.website,  C_BLUE   },
-        { "Twitter",  &profile.twitter,  C_TEAL   },
+        { "Socials",  &profile.socials,  C_TEAL   },
         { "LinkedIn", &profile.linkedin, C_PURPLE },
     };
     bool anyLink = false;
@@ -1942,7 +1942,7 @@ static void DrawProfileView(Vector2 mouse) {
             { "Pronouns",       edit.pronouns, 16  },
             { "Bio",            edit.bio,      140 },
             { "Website",        edit.website,  64  },
-            { "Twitter handle", edit.twitter,  32  },
+            { "Socials",        edit.socials,  32  },
             { "LinkedIn",       edit.linkedin, 64  },
         };
         const int FCOUNT = 6;
@@ -1984,7 +1984,7 @@ static void DrawProfileView(Vector2 mouse) {
                 profile.pronouns = edit.pronouns;
                 profile.bio      = edit.bio;
                 profile.website  = edit.website;
-                profile.twitter  = edit.twitter;
+                profile.socials  = edit.socials;
                 profile.linkedin = edit.linkedin;
                 saveProfileData();
                 edit.editing = false;
@@ -2056,7 +2056,7 @@ static void DrawProfileView(Vector2 mouse) {
 // ─────────────────────────────────────────────────────────────
 //  Main Dashboard() — one Raylib window, all views
 // ─────────────────────────────────────────────────────────────
-void Dashboard() {
+bool Dashboard() {
     SetTraceLogLevel(LOG_NONE);
     InitAudioDevice();
 
@@ -2117,7 +2117,11 @@ void Dashboard() {
         // ── Global Interface Containers (Always Visible) ──
         if (DrawSidebar(view, music, mouse)) {
             EndDrawing(); // Safely wrap render pipelines before function termination
-            return;       // Destructively exits dashboard window execution context to primary shell
+            // Clean up audio the same way the normal exit path below does,
+            // so the next login's Dashboard() call starts from a clean state.
+            if (music.loaded) { StopMusicStream(music.track); UnloadMusicStream(music.track); }
+            CloseAudioDevice();
+            return true;  // Tell main() this was a logout — go back to the login screen
         }
         DrawTopBar(sessionSecs);
 
@@ -2177,4 +2181,5 @@ void Dashboard() {
 
     if (music.loaded) { StopMusicStream(music.track); UnloadMusicStream(music.track); }
     CloseAudioDevice();
+    return false; // Window was closed (not a logout) — main() should quit entirely
 }

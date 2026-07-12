@@ -55,7 +55,7 @@ struct ProfileData {
     std::string pronouns;
     std::string bio;
     std::string website;
-    std::string twitter;
+    std::string socials;   // renamed from `twitter` — any social handle/link (X, Instagram, etc.)
     std::string linkedin;
 };
 extern ProfileData profile;
