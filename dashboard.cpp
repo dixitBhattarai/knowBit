@@ -73,10 +73,16 @@ struct ModalState {
     int  pickMonth     = 0;      // month the chosen day belongs to
     int  pickYear      = 0;      // year the chosen day belongs to
     // edit fields (only due-date / priority / type)
+   // edit fields (only due-date / priority / type)
     char efPri[4]      = "";
     char efDays[8]     = "";
     char efCat[32]     = "";
+    // ── Delete confirmation popup ──
+    bool   confirmDeleteOpen = false;   // true while the "Are you sure?" dialog is showing
+    int    confirmDeleteId   = -1;      // taskId pending deletion
+    string confirmDeleteName = "";      // task name shown in the confirmation message
 };
+
 
 // ─── Focus-mode timer state ──────────────────────────────────
 struct FocusTimer {
@@ -518,22 +524,43 @@ static void DrawNewTaskModal(ModalState& m, Vector2 mouse) {
     // Left column: text fields (Task ID is no longer asked — it's auto-assigned)
     float fx = box.x + 24, fy = box.y + 60, fw = 340, fh = 36;
 
-    struct Field { const char* label; char* buf; int maxLen; };
-    Field fields[] = {
-        { "Task Name",         m.tfName, 64  },
-        { "Description",       m.tfDesc, 128 },
-        { "Category / Type",   m.tfCat,  32  },
-        { "Priority (1-5)",    m.tfPri,  4   },
-    };
+   struct Field { const char* label; char* buf; int maxLen; };
+Field fields[] = {
+    { "Task Name",         m.tfName, 64  },
+    { "Description",       m.tfDesc, 128 },
+    { "Priority (1-5)",    m.tfPri,  4   },
+};
 
-    for (int i = 0; i < 4; i++) {
-        Rectangle r = {fx, fy + i*76.0f, fw, (float)fh};
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, r))
-            m.activeField = i;
-        bool act = (m.activeField == i);
-        DrawInputBox(fields[i].label, fields[i].buf, r, act);
+for (int i = 0; i < 3; i++) {
+    Rectangle r = {fx, fy + i*76.0f, fw, (float)fh};
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, r))
+        m.activeField = i;
+    bool act = (m.activeField == i);
+    DrawInputBox(fields[i].label, fields[i].buf, r, act);
+}
+
+// ── Category selection chips (replaces free-text category entry) ──
+static const char* CATS[] = { "Study", "Work", "Personal", "Health", "Other" };
+const int CAT_COUNT = 5;
+float caty = fy + 3*76.0f;
+DrawText("Category", (int)fx, (int)caty, 13, C_TEXT_DIM);
+caty += 20;
+float chipX = fx;
+for (int i = 0; i < CAT_COUNT; i++) {
+    int tw = MeasureText(CATS[i], 13);
+    float chipW = tw + 24.0f;
+    if (chipX + chipW > fx + fw) { chipX = fx; caty += 36; }
+    Rectangle chip = { chipX, caty, chipW, 30 };
+    bool chipHov = CheckCollisionPointRec(mouse, chip);
+    bool chipSel = (strcmp(m.tfCat, CATS[i]) == 0);
+    DrawRoundRect(chip, 0.5f, chipSel ? C_ORANGE : (chipHov ? C_CARD_HOV : C_DARKGRAY));
+    DrawRoundRectLines(chip, 0.5f, 1.0f, chipSel ? C_ORANGE : C_BORDER);
+    DrawText(CATS[i], (int)chip.x + 12, (int)chip.y + 8, 13, chipSel ? C_BG : C_WHITE);
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && chipHov) {
+        snprintf(m.tfCat, sizeof(m.tfCat), "%s", CATS[i]);
     }
-
+    chipX += chipW + 8;
+}
     // Right column: clickable mini calendar for choosing the due date
     float cx = fx + fw + 32, cy = box.y + 66;
     float cw = box.width - (cx - box.x) - 24;
@@ -572,7 +599,7 @@ static void DrawNewTaskModal(ModalState& m, Vector2 mouse) {
     // Enter submits the form, Escape cancels — same as clicking the buttons.
     if (IsKeyPressed(KEY_TAB)) {
         bool shiftDown = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-        m.activeField = shiftDown ? (m.activeField + 3) % 4 : (m.activeField + 1) % 4;
+        m.activeField = shiftDown ? (m.activeField + 2) % 3 : (m.activeField + 1) % 3;
     }
     HandleTextInput(fields[m.activeField].buf,
                     fields[m.activeField].maxLen,
@@ -871,11 +898,11 @@ static void DrawTaskList(vector<Task>& tasks, float x, float y,
                 }
             }
         }
-        if (act.doDelete) {
-            int id = tasks[i].taskId;
-            allTasks.erase(remove_if(allTasks.begin(), allTasks.end(),
-                [id](const Task& t){ return t.taskId==id; }), allTasks.end());
-            saveUserData();
+      if (act.doDelete) {
+            // Don't delete immediately — open a confirmation popup instead.
+            modal.confirmDeleteOpen = true;
+            modal.confirmDeleteId   = tasks[i].taskId;
+            modal.confirmDeleteName = tasks[i].taskName;
         }
         if (act.doEdit) {
             // find real index in allTasks by ID
@@ -900,7 +927,7 @@ static void DrawTaskList(vector<Task>& tasks, float x, float y,
 
     EndScissorMode();
 
-    // Scroll bar
+   // Scroll bar
     if (totalH > h) {
         float sbH = (h/totalH)*h;
         float sbY = y + (scroll/totalH)*h;
@@ -909,8 +936,59 @@ static void DrawTaskList(vector<Task>& tasks, float x, float y,
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Focus Mode right panel
+//  Delete-confirmation popup ("Are you sure you want to remove
+//  this task?"). Shown on top of everything else whenever
+//  modal.confirmDeleteOpen is true. Actual deletion + save only
+//  happens if the user presses "Delete" (or Enter); "Cancel"
+//  (or Escape) just closes the popup and keeps the task.
 // ─────────────────────────────────────────────────────────────
+static void DrawConfirmDeleteModal(ModalState& m, Vector2 mouse) {
+    DrawRectangle(0, 0, WIN_W, WIN_H, {0, 0, 0, 160});
+
+    Rectangle box = { WIN_W/2 - 200.0f, WIN_H/2 - 100.0f, 400, 200 };
+    DrawRoundRect(box, 0.06f, C_PANEL);
+    DrawRoundRectLines(box, 0.06f, 1.5f, C_RED);
+
+    DrawText("Remove Task?", (int)box.x + 24, (int)box.y + 20, 18, C_WHITE);
+
+    string msg = "Are you sure you want to remove \"" + m.confirmDeleteName + "\"?";
+    DrawWrappedText(msg.c_str(), (int)box.x + 24, (int)box.y + 54, (int)box.width - 48, 14, C_TEXT_DIM);
+    DrawText("This cannot be undone.", (int)box.x + 24, (int)box.y + 100, 12, C_RED);
+
+    Rectangle delBtn = { box.x + 24, box.y + box.height - 52, box.width/2 - 32, 38 };
+    Rectangle canBtn  = { box.x + box.width/2 + 8, box.y + box.height - 52, box.width/2 - 32, 38 };
+    bool delHov = CheckCollisionPointRec(mouse, delBtn);
+    bool canHov = CheckCollisionPointRec(mouse, canBtn);
+
+    DrawRoundRect(delBtn, 0.2f, delHov ? C_RED : C_DARKGRAY);
+    DrawText("Delete", (int)delBtn.x + 20, (int)delBtn.y + 10, 16, delHov ? C_WHITE : C_TEXT_DIM);
+
+    DrawRoundRect(canBtn, 0.2f, canHov ? C_GREEN : C_DARKGRAY);
+    DrawText("Cancel", (int)canBtn.x + 20, (int)canBtn.y + 10, 16, canHov ? C_BG : C_TEXT_DIM);
+
+    bool enterConfirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+    bool escCancel    = IsKeyPressed(KEY_ESCAPE);
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || enterConfirm || escCancel) {
+        delHov = delHov || enterConfirm;
+        canHov = canHov || escCancel;
+        if (delHov) {
+            int id = m.confirmDeleteId;
+            allTasks.erase(remove_if(allTasks.begin(), allTasks.end(),
+                [id](const Task& t){ return t.taskId == id; }), allTasks.end());
+            saveUserData();
+        }
+        if (delHov || canHov) {
+            m.confirmDeleteOpen = false;
+            m.confirmDeleteId   = -1;
+            m.confirmDeleteName = "";
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Focus Mode right panel
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 //  Focus Mode right panel
 // ─────────────────────────────────────────────────────────────
@@ -2063,12 +2141,18 @@ void Dashboard() {
         }
 
         // ── Popup Modal Overlay System Layer (Stays completely crash-proof) ──
+     // ── Popup Modal Overlay System Layer (Stays completely crash-proof) ──
         if (modal.open) {
             if (modal.taskIdx == -1) {
                 DrawNewTaskModal(modal, mouse); // Opens New Form Input Box Layer
             } else {
                 DrawEditModal(modal, mouse);    // Passes direct reference array layout safely
             }
+        }
+
+        // ── Delete confirmation popup (drawn above everything else) ──
+        if (modal.confirmDeleteOpen) {
+            DrawConfirmDeleteModal(modal, mouse);
         }
 
         // ── Reminder Banner Overlay Notification ──

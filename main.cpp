@@ -22,18 +22,18 @@ int main() {
 // After loading your font, add this to smooth the text:
     SetTextureFilter(customFont.texture, TEXTURE_FILTER_BILINEAR);
     SetTargetFPS(60);
-    texLogo = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/logo.png");
-    texStreak = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/streak.png");
-    texClock = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/clock.png");
-    texMusic = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/music.png");
-    texCalendar = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/calendar.png");
-    texEdit = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/edit.png");
+ texLogo = LoadTexture("assets/logo.png");
+    texStreak = LoadTexture("assets/streak.png");
+    texClock = LoadTexture("assets/clock.png");
+    texMusic = LoadTexture("assets/music.png");
+    texCalendar = LoadTexture("assets/calendar.png");
+    texEdit = LoadTexture("assets/edit.png");
         if (texEdit.id == 0) {
     printf("\n\n!!! ERROR: RAYLIB CANNOT FIND THE EDIT IMAGE !!!\n\n");
 } else {
     printf("\n\n>>> SUCCESS: EDIT IMAGE LOADED PERFECTLY <<<\n\n");
 }
-    texDelete = LoadTexture("/home/dixit/Documents/knowBit_Project/assets/delete.png");
+    texDelete = LoadTexture("assets/delete.png");  
     bool loginSuccess = runLoginGUI();
     if (loginSuccess) {
         loadUserData();
