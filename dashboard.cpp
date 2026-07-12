@@ -187,8 +187,42 @@ static void DrawRoundRectLines(Rectangle r, float round, float thick, Color c) {
     DrawRectangleRoundedLinesEx(r, round, 8, thick, c);
 }
 
-// Text input handler — returns true if value changed
+// NOTE: raylib provides IsKeyPressedRepeat(int key) natively — it returns true
+// on the initial key-down and then repeatedly while held (OS-style key repeat),
+// which is exactly what's needed for a held Backspace. We call raylib's
+// built-in version directly instead of redefining our own.
+
+// Text input handler — returns true if value changed.
+// Supports typing, held-backspace repeat, and Ctrl+C / Ctrl+V / Ctrl+X clipboard shortcuts.
 static bool HandleTextInput(char* buf, int maxLen, int key) {
+    bool ctrlDown = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+
+    if (ctrlDown && IsKeyPressed(KEY_V)) {
+        const char* clip = GetClipboardText();
+        if (clip) {
+            int len = TextLength(buf);
+            for (int i = 0; clip[i] != '\0' && len < maxLen - 1; i++) {
+                // Skip newlines so a multi-line paste doesn't corrupt a single-line field
+                if (clip[i] >= 32 && clip[i] <= 125) {
+                    buf[len] = clip[i];
+                    buf[len+1] = '\0';
+                    len++;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+    if (ctrlDown && IsKeyPressed(KEY_C)) {
+        SetClipboardText(buf);
+        return false;
+    }
+    if (ctrlDown && IsKeyPressed(KEY_X)) {
+        SetClipboardText(buf);
+        buf[0] = '\0';
+        return true;
+    }
+
     if (key == KEY_BACKSPACE) {
         int len = TextLength(buf);
         if (len > 0) { buf[len-1] = '\0'; return true; }
@@ -534,13 +568,22 @@ static void DrawNewTaskModal(ModalState& m, Vector2 mouse) {
     DrawText("Cancel", (int)canBtn.x + 20, (int)canBtn.y + 10, 16,
              canHov ? C_WHITE : C_TEXT_DIM);
 
-    // Keyboard input for active field
-    if (IsKeyPressed(KEY_TAB)) m.activeField = (m.activeField + 1) % 4;
+    // Keyboard input for active field: Tab / Shift+Tab cycles fields,
+    // Enter submits the form, Escape cancels — same as clicking the buttons.
+    if (IsKeyPressed(KEY_TAB)) {
+        bool shiftDown = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        m.activeField = shiftDown ? (m.activeField + 3) % 4 : (m.activeField + 1) % 4;
+    }
     HandleTextInput(fields[m.activeField].buf,
                     fields[m.activeField].maxLen,
-                    IsKeyPressed(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
+                    IsKeyPressedRepeat(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
 
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    bool enterConfirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+    bool escCancel    = IsKeyPressed(KEY_ESCAPE);
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || enterConfirm || escCancel) {
+        addHov = addHov || enterConfirm;
+        canHov = canHov || escCancel;
         if (addHov) {
             // Validate
             if (TextLength(m.tfName) == 0) {
@@ -621,8 +664,11 @@ static void DrawEditModal(ModalState& m, Vector2 mouse) {
     char* bufs[3] = {m.efPri, m.efCat, m.efDays};
     int   maxL[3] = {4, 32, 8};
     HandleTextInput(bufs[m.activeField], maxL[m.activeField],
-                    IsKeyPressed(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
-    if (IsKeyPressed(KEY_TAB)) m.activeField = (m.activeField+1)%3;
+                    IsKeyPressedRepeat(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
+    if (IsKeyPressed(KEY_TAB)) {
+        bool shiftDown = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        m.activeField = shiftDown ? (m.activeField + 2) % 3 : (m.activeField + 1) % 3;
+    }
 
     Rectangle saveBtn = {fx, box.y + box.height - 52, fw/2-8, 38};
     Rectangle canBtn  = {fx+fw/2+8, box.y+box.height-52, fw/2-8, 38};
@@ -634,7 +680,12 @@ static void DrawEditModal(ModalState& m, Vector2 mouse) {
     DrawRoundRect(canBtn,  0.2f, ch ? C_RED  : C_DARKGRAY);
     DrawText("Cancel",(int)canBtn.x+12,(int)canBtn.y+10,16, ch?C_WHITE:C_TEXT_DIM);
 
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    // Enter saves, Escape cancels — same behavior as clicking the buttons
+    bool enterConfirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+    bool escCancel    = IsKeyPressed(KEY_ESCAPE);
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || enterConfirm || escCancel) {
+        sh = sh || enterConfirm;
+        ch = ch || escCancel;
         if (sh) {
             if (TextLength(m.efPri)  > 0) t.priority     = max(1,min(5,atoi(m.efPri)));
             if (TextLength(m.efCat)  > 0) t.taskCategory = m.efCat;
@@ -901,7 +952,7 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
         DrawText("Set Minutes:", (int)cx-55, (int)cy-36, 14, C_TEXT_DIM);
         Rectangle minBox = {cx-50, cy-16, 100, 36};
         DrawInputBox("", ft.setMin, minBox, true, C_GREEN);
-        HandleTextInput(ft.setMin, 6, IsKeyPressed(KEY_BACKSPACE)?KEY_BACKSPACE:0);
+        HandleTextInput(ft.setMin, 6, IsKeyPressedRepeat(KEY_BACKSPACE)?KEY_BACKSPACE:0);
 
         Rectangle startBtn = {cx-55, cy+36, 110, 36};
         bool sh = CheckCollisionPointRec(mouse, startBtn);
@@ -1409,17 +1460,27 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
     // Persists which day is currently selected while browsing the calendar
     static int selDay = -1, selMonth = 0, selYear = 0;
 
+    // ── Overall canvas: everything right of the sidebar, below the top bar ──
     float lx = SIDE_W + 24, ly = TOP_H + 20;
+    float canvasW = WIN_W - lx - 24;      // full usable width
+    float canvasH = WIN_H - ly - 24;      // full usable height
 
-    // On-screen nav arrows (keyboard arrows still work too)
-    Rectangle prevBtn = {lx, ly, 30, 30};
-    Rectangle nextBtn = {lx + 230, ly, 30, 30};
+    // Right column (detail panel + heatmap) gets a fixed width; the grid
+    // takes the rest, so both scale to fill the whole window instead of
+    // leaving space unused on the right / bottom.
+    float rightW   = 380;
+    float colGap   = 28;
+    float gridW    = canvasW - rightW - colGap;
+
+    // On-screen nav arrows (keyboard left/right arrows still work too)
+    Rectangle prevBtn = {lx, ly, 32, 32};
+    Rectangle nextBtn = {lx + 230, ly, 32, 32};
     bool prevHov = CheckCollisionPointRec(mouse, prevBtn);
     bool nextHov = CheckCollisionPointRec(mouse, nextBtn);
     DrawRoundRect(prevBtn, 0.3f, prevHov ? C_ORANGE : C_DARKGRAY);
-    DrawText("<", (int)prevBtn.x+11, (int)prevBtn.y+6, 16, prevHov ? C_BG : C_WHITE);
+    DrawText("<", (int)prevBtn.x+12, (int)prevBtn.y+7, 17, prevHov ? C_BG : C_WHITE);
     DrawRoundRect(nextBtn, 0.3f, nextHov ? C_ORANGE : C_DARKGRAY);
-    DrawText(">", (int)nextBtn.x+11, (int)nextBtn.y+6, 16, nextHov ? C_BG : C_WHITE);
+    DrawText(">", (int)nextBtn.x+12, (int)nextBtn.y+7, 17, nextHov ? C_BG : C_WHITE);
 
     bool clickPrev = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && prevHov;
     bool clickNext = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && nextHov;
@@ -1430,20 +1491,30 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
     int today2=lt->tm_mday, todayM=lt->tm_mon+1, todayY=lt->tm_year+1900;
 
     string heading = calMonthName(calMonth) + "  " + to_string(calYear);
-    int hw = MeasureText(heading.c_str(), 22);
-    DrawText(heading.c_str(), (int)(lx + 125 - hw/2), (int)ly + 5, 22, C_ORANGE);
-    DrawText("Click a day to see its tasks", (int)lx, (int)ly + 42, 12, C_TEXT_DIM);
+    int hw = MeasureText(heading.c_str(), 24);
+    DrawText(heading.c_str(), (int)(lx + 130 - hw/2), (int)ly + 4, 24, C_ORANGE);
+    DrawText("Click a day to see its tasks", (int)lx, (int)ly + 44, 13, C_TEXT_DIM);
 
+    // ── Calendar grid: cells sized to fill gridW, and rows sized to fill
+    //    the remaining canvas height, so the grid never looks cramped. ──
     const char* dow[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-    const float cellW = 68, cellH = 58, cellGap = 6;
-    float gridTop = ly + 76;
-    for (int i = 0; i < 7; i++) {
-        int cw = MeasureText(dow[i], 13);
-        DrawText(dow[i], (int)(lx + i*(cellW+cellGap) + cellW/2 - cw/2), (int)gridTop - 22, 13, C_TEAL);
-    }
+    const float cellGap = 8;
+    float gridTop = ly + 84;
+    float cellW = (gridW - 6*cellGap) / 7.0f;
 
     int start = calStart(calMonth, calYear);
     int total = calDays(calMonth, calYear);
+    int numRows = (start + total + 6) / 7;   // rows actually needed this month
+    float gridBottomLimit = ly + canvasH;
+    float cellH = (gridBottomLimit - gridTop - (numRows-1)*cellGap) / numRows;
+    if (cellH > 110) cellH = 110;   // don't let cells get absurdly tall on short months
+    if (cellH < 58)  cellH = 58;
+
+    for (int i = 0; i < 7; i++) {
+        int cw = MeasureText(dow[i], 14);
+        DrawText(dow[i], (int)(lx + i*(cellW+cellGap) + cellW/2 - cw/2), (int)gridTop - 24, 14, C_TEAL);
+    }
+
     int row = 0;
     for (int d = 1; d <= total; d++) {
         int col = (start + d - 1) % 7;
@@ -1465,27 +1536,42 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
         Color cellBg = C_CARD;
         if (completedCount > 0 && pendingCount == 0) cellBg = {14, 68, 41, 255};   // all due tasks done -> green
         else if (pendingCount > 0)                    cellBg = {58, 44, 20, 255};  // still pending -> amber
-        DrawRoundRect(cell, 0.15f, hov ? C_CARD_HOV : cellBg);
+        DrawRoundRect(cell, 0.12f, hov ? C_CARD_HOV : cellBg);
 
         Color borderCol = C_BORDER;
         float borderThick = 1.0f;
         if (isSel)      { borderCol = C_ORANGE; borderThick = 2.0f; }
         else if (isToday) { borderCol = C_RED;    borderThick = 2.0f; }
-        DrawRoundRectLines(cell, 0.15f, borderThick, borderCol);
+        DrawRoundRectLines(cell, 0.12f, borderThick, borderCol);
 
         char db[8]; snprintf(db, sizeof(db), "%d", d);
-        DrawText(db, (int)rx+8, (int)ry+6, 15, isToday ? C_RED : (hov ? C_WHITE : C_TEXT_DIM));
+        DrawText(db, (int)rx+10, (int)ry+8, 17, isToday ? C_RED : (hov ? C_WHITE : C_TEXT_DIM));
 
         if (completedCount > 0) {
             char cb[8]; snprintf(cb, sizeof(cb), "%d", completedCount);
-            DrawCircle((int)(rx+cellW-16), (int)(ry+16), 8, C_GREEN);
-            DrawText(cb, (int)(rx+cellW-19), (int)(ry+9), 12, C_BG);
+            DrawCircle((int)(rx+cellW-18), (int)(ry+18), 9, C_GREEN);
+            DrawText(cb, (int)(rx+cellW-21), (int)(ry+11), 12, C_BG);
         }
         if (pendingCount > 0) {
             char pb[8]; snprintf(pb, sizeof(pb), "%d", pendingCount);
-            float ox = completedCount > 0 ? cellW - 36 : cellW - 16;
-            DrawCircle((int)(rx+ox), (int)(ry+16), 8, C_YELLOW);
-            DrawText(pb, (int)(rx+ox-3), (int)(ry+9), 12, C_BG);
+            float ox = completedCount > 0 ? cellW - 40 : cellW - 18;
+            DrawCircle((int)(rx+ox), (int)(ry+18), 9, C_YELLOW);
+            DrawText(pb, (int)(rx+ox-3), (int)(ry+11), 12, C_BG);
+        }
+
+        // For tall cells (short months), show up to 2 task names inline
+        if (cellH > 72) {
+            float ny = ry + 32;
+            int shown = 0;
+            for (auto& t : allTasks) {
+                if (shown >= 2) break;
+                if (t.dueDay==d && t.dueMonth==calMonth && t.dueYear==calYear) {
+                    string nm = t.taskName;
+                    if (nm.size() > 14) nm = nm.substr(0,12) + "..";
+                    DrawText(nm.c_str(), (int)rx+8, (int)ny, 10, t.isCompleted ? C_TEXT_DIM : C_WHITE);
+                    ny += 14; shown++;
+                }
+            }
         }
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hov) {
@@ -1494,22 +1580,23 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
         if (col == 6) row++;
     }
 
-    // ── Right column: selected-day detail panel ──
-    float rx0 = lx + 7*(cellW+cellGap) + 30;
-    float ry0 = gridTop - 22;
-    float rw0 = WIN_W - rx0 - 24;
+    // ── Right column: selected-day detail panel (top) + monthly heatmap (bottom) ──
+    float rx0 = lx + gridW + colGap;
+    float ry0 = ly;
+    float rw0 = rightW;
 
-    Rectangle detailBox = {rx0, ry0, rw0, 230};
-    DrawRoundRect(detailBox, 0.05f, C_PANEL);
-    DrawRoundRectLines(detailBox, 0.05f, 1.0f, C_BORDER);
+    float detailH = canvasH * 0.42f;
+    Rectangle detailBox = {rx0, ry0, rw0, detailH};
+    DrawRoundRect(detailBox, 0.04f, C_PANEL);
+    DrawRoundRectLines(detailBox, 0.04f, 1.0f, C_BORDER);
 
     if (selDay < 0) {
-        DrawText("Select a day", (int)rx0+16, (int)ry0+16, 16, C_WHITE);
-        DrawText("Click any date on the calendar", (int)rx0+16, (int)ry0+46, 12, C_TEXT_DIM);
-        DrawText("to view and complete its tasks.", (int)rx0+16, (int)ry0+64, 12, C_TEXT_DIM);
+        DrawText("Select a day", (int)rx0+18, (int)ry0+18, 17, C_WHITE);
+        DrawText("Click any date on the calendar", (int)rx0+18, (int)ry0+50, 13, C_TEXT_DIM);
+        DrawText("to view and complete its tasks.", (int)rx0+18, (int)ry0+70, 13, C_TEXT_DIM);
     } else {
         string dlabel = calMonthName(selMonth) + " " + to_string(selDay) + ", " + to_string(selYear);
-        DrawText(("Due: " + dlabel).c_str(), (int)rx0+16, (int)ry0+14, 16, C_WHITE);
+        DrawText(("Due: " + dlabel).c_str(), (int)rx0+18, (int)ry0+16, 17, C_WHITE);
 
         vector<int> idxs;
         for (int i = 0; i < (int)allTasks.size(); i++) {
@@ -1517,12 +1604,14 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
             if (t.dueDay==selDay && t.dueMonth==selMonth && t.dueYear==selYear) idxs.push_back(i);
         }
         if (idxs.empty()) {
-            DrawText("No tasks due this day.", (int)rx0+16, (int)ry0+50, 13, C_TEXT_DIM);
+            DrawText("No tasks due this day.", (int)rx0+18, (int)ry0+54, 13, C_TEXT_DIM);
         } else {
-            float yy = ry0 + 46;
-            for (int i = 0; i < (int)idxs.size() && i < 6; i++) {
+            float yy = ry0 + 52;
+            float rowH = 28;
+            int maxRows = (int)((detailH - 60) / rowH);
+            for (int i = 0; i < (int)idxs.size() && i < maxRows; i++) {
                 Task& t = allTasks[idxs[i]];
-                Rectangle chk = {rx0+16, yy, 18, 18};
+                Rectangle chk = {rx0+18, yy, 19, 19};
                 bool chkHov = CheckCollisionPointRec(mouse, chk);
                 if (t.isCompleted) {
                     DrawRoundRect(chk, 0.3f, C_GREEN);
@@ -1536,26 +1625,40 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
                     }
                 }
                 string nm = t.taskName;
-                if (nm.size() > 26) nm = nm.substr(0,23) + "...";
-                DrawText(nm.c_str(), (int)chk.x+26, (int)chk.y, 13, t.isCompleted ? C_TEXT_DIM : C_WHITE);
-                yy += 26;
+                int maxChars = (int)((rw0 - 60) / 7.5f);
+                if ((int)nm.size() > maxChars) nm = nm.substr(0, maxChars-3) + "...";
+                DrawText(nm.c_str(), (int)chk.x+28, (int)chk.y, 14, t.isCompleted ? C_TEXT_DIM : C_WHITE);
+                yy += rowH;
             }
-            if (idxs.size() > 6) DrawText("...", (int)rx0+16, (int)yy, 12, C_TEXT_DIM);
+            if ((int)idxs.size() > maxRows) DrawText("...", (int)rx0+18, (int)yy, 12, C_TEXT_DIM);
         }
     }
 
-    // ── Monthly activity heatmap, below the detail panel ──
+    // ── Monthly activity heatmap — fills the rest of the right column ──
     // Cells light up on the day a task was actually COMPLETED (dateCompleted),
     // not on the day it happened to be due. Intensity (alpha) scales with how
     // many tasks were completed that day — more completions = more opaque green.
     // Pending tasks are never shown here (no yellow/amber for pending).
-    float hx = rx0 + 20, hy = ry0 + 230 + 30;
-    DrawText("Monthly Activity", (int)hx, (int)hy - 22, 14, C_WHITE);
+    float hy0 = ry0 + detailH + 24;
+    float heatmapH = canvasH - detailH - 24;
 
-    #define CELL 26
-    #define CPAD 6
+    Rectangle heatBox = {rx0, hy0, rw0, heatmapH};
+    DrawRoundRect(heatBox, 0.04f, C_PANEL);
+    DrawRoundRectLines(heatBox, 0.04f, 1.0f, C_BORDER);
+
+    float hx = rx0 + 34, hy = hy0 + 44;
+    DrawText("Monthly Activity", (int)rx0+18, (int)hy0+16, 15, C_WHITE);
+
+    // Cell size scales with the available heatmap height so it never
+    // looks squeezed into a leftover sliver.
+    float availForGrid = heatmapH - 44 - 44; // minus header and legend space
+    float cell = min((rw0 - 34 - 16) / 5.0f, availForGrid / 7.0f);
+    if (cell > 30) cell = 30;
+    if (cell < 18) cell = 18;
+    float cpad = cell * 0.28f;
+
     const char* dow2[] = {"S","M","T","W","T","F","S"};
-    for (int i = 0; i < 7; i++) DrawText(dow2[i], (int)hx-22, (int)(hy+i*(CELL+CPAD))+6, 12, C_TEXT_DIM);
+    for (int i = 0; i < 7; i++) DrawText(dow2[i], (int)hx-22, (int)(hy+i*(cell+cpad))+ (int)(cell/2-6), 12, C_TEXT_DIM);
 
     const int MAX_INTENSITY_CAP = 5;   // completions at/above this count = full opacity
     const unsigned char ALPHA_MIN = 60;
@@ -1581,25 +1684,23 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
             cc = {57, 211, 83, alpha};
         }
 
-        Rectangle cr = {(float)(hx+c*(CELL+CPAD)), (float)(hy+r*(CELL+CPAD)), (float)CELL, (float)CELL};
+        Rectangle cr = {(float)(hx+c*(cell+cpad)), (float)(hy+r*(cell+cpad)), cell, cell};
         bool isSelCell = (d==selDay && calMonth==selMonth && calYear==selYear);
         DrawRectangleRounded(cr, 0.25f, 4, cc);
         if (isSelCell) DrawRoundRectLines(cr, 0.25f, 2.0f, WHITE);
         char ds[4]; snprintf(ds, sizeof(ds), "%d", d);
         int tw = MeasureText(ds, 10);
-        DrawText(ds, (int)(cr.x+(CELL-tw)/2), (int)(cr.y+7), 10, comp>=3 ? BLACK : LIGHTGRAY);
+        DrawText(ds, (int)(cr.x+(cell-tw)/2), (int)(cr.y+cell/2-5), 10, comp>=3 ? BLACK : LIGHTGRAY);
     }
-    int legy = (int)(hy + 7*(CELL+CPAD) + 14);
-    DrawText("Less", (int)hx, (int)legy, 11, C_TEXT_DIM);
+    int legy = (int)(hy0 + heatmapH - 26);
+    DrawText("Less", (int)hx-22, (int)legy, 11, C_TEXT_DIM);
     for (int i = 0; i < 5; i++) {
         unsigned char a = (i==0) ? 255 : (unsigned char)(ALPHA_MIN + ((ALPHA_MAX - ALPHA_MIN) * i) / 4);
         Color sw = (i==0) ? Color{22,27,34,255} : Color{57,211,83,a};
-        Rectangle legSw = {(float)(hx+34+i*20), (float)legy-2, 16, 16};
+        Rectangle legSw = {(float)(hx+14+i*20), (float)legy-2, 16, 16};
         DrawRectangleRounded(legSw, 0.3f, 4, sw);
     }
-    DrawText("More", (int)hx+34+5*20+6, (int)legy, 11, C_TEXT_DIM);
-    #undef CELL
-    #undef CPAD
+    DrawText("More", (int)hx+14+5*20+6, (int)legy, 11, C_TEXT_DIM);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1776,9 +1877,13 @@ static void DrawProfileView(Vector2 mouse) {
             DrawInputBox(fields[i].label, fields[i].buf, r, edit.activeField == i);
         }
 
-        if (IsKeyPressed(KEY_TAB)) edit.activeField = (edit.activeField + 1) % FCOUNT;
+        if (IsKeyPressed(KEY_TAB)) {
+            bool shiftDown = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+            edit.activeField = shiftDown ? (edit.activeField + FCOUNT - 1) % FCOUNT
+                                          : (edit.activeField + 1) % FCOUNT;
+        }
         HandleTextInput(fields[edit.activeField].buf, fields[edit.activeField].maxLen,
-                        IsKeyPressed(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
+                        IsKeyPressedRepeat(KEY_BACKSPACE) ? KEY_BACKSPACE : 0);
 
         Rectangle saveBtn = { fx, fy + FCOUNT * 56.0f + 8, fw / 2 - 8, 38 };
         Rectangle canBtn  = { fx + fw / 2 + 8, fy + FCOUNT * 56.0f + 8, fw / 2 - 8, 38 };
@@ -1790,7 +1895,12 @@ static void DrawProfileView(Vector2 mouse) {
         DrawRoundRect(canBtn, 0.2f, canHov ? C_RED : C_DARKGRAY);
         DrawText("Cancel", (int)canBtn.x + 20, (int)canBtn.y + 10, 16, canHov ? C_WHITE : C_TEXT_DIM);
 
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        // Enter saves, Escape cancels — same behavior as clicking the buttons
+        bool enterConfirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+        bool escCancel    = IsKeyPressed(KEY_ESCAPE);
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || enterConfirm || escCancel) {
+            saveHov = saveHov || enterConfirm;
+            canHov  = canHov  || escCancel;
             if (saveHov) {
                 profile.fullName = edit.fullName;
                 profile.pronouns = edit.pronouns;

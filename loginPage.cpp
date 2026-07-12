@@ -11,6 +11,37 @@ using namespace std;
 extern Font robotoRegular;
  extern Font robotoBold;
 
+// raylib provides a built-in IsKeyPressedRepeat(int key) for OS-style key
+// repeat, but it only tracks one key globally — not enough here since
+// Username and Password each need their own independent hold-timer for
+// Backspace. This wraps the same repeat logic per fieldId (0 = username,
+// 1 = password) so holding backspace in one field doesn't affect the other.
+static bool IsFieldKeyPressedRepeat(int key, int fieldId) {
+    const double INITIAL_DELAY = 0.35;
+    const double REPEAT_RATE   = 0.035;
+
+    static int    heldKey[2]   = { -1, -1 };
+    static double heldSince[2] = { 0.0, 0.0 };
+    static double lastFire[2]  = { 0.0, 0.0 };
+
+    if (IsKeyPressed(key)) {
+        heldKey[fieldId] = key;
+        heldSince[fieldId] = GetTime();
+        lastFire[fieldId] = heldSince[fieldId];
+        return true;
+    }
+    if (IsKeyDown(key) && heldKey[fieldId] == key) {
+        double now = GetTime();
+        if (now - heldSince[fieldId] >= INITIAL_DELAY && now - lastFire[fieldId] >= REPEAT_RATE) {
+            lastFire[fieldId] = now;
+            return true;
+        }
+        return false;
+    }
+    if (heldKey[fieldId] == key && !IsKeyDown(key)) heldKey[fieldId] = -1;
+    return false;
+}
+
 bool registerUser(string username, string password) {
     ofstream file("users.txt", ios::app); 
     if (!file.is_open()) return false;
@@ -113,33 +144,79 @@ bool runLoginGUI() {
                     loginMessage = "Please contact admin to reset password."; messageColor = saffronOrange;
                 }
             }
+
+            // ── Tab cycling: with two fields, Tab just flips focus between them ──
+            if (IsKeyPressed(KEY_TAB)) {
+                if (mouseOnUser)      { mouseOnUser = false; mouseOnPass = true; }
+                else if (mouseOnPass) { mouseOnUser = true;  mouseOnPass = false; }
+                else                  { mouseOnUser = true;  mouseOnPass = false; } // nothing focused -> start at Username
+            }
+
+            bool ctrlDown = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
             
-            // ── Typing Logic ──
+            // ── Typing Logic (Username) ──
             if (mouseOnUser) {
-                int key = GetCharPressed();
-                while (key > 0) {
-                    if ((key >= 32) && (key <= 125) && (userLetterCount < MAX_INPUT_CHARS)) {
-                        usernameInput[userLetterCount] = (char)key; usernameInput[userLetterCount + 1] = '\0'; userLetterCount++;
+                if (ctrlDown && IsKeyPressed(KEY_V)) {
+                    const char* clip = GetClipboardText();
+                    if (clip) {
+                        for (int i = 0; clip[i] != '\0' && userLetterCount < MAX_INPUT_CHARS; i++) {
+                            if (clip[i] >= 32 && clip[i] <= 125) {
+                                usernameInput[userLetterCount] = clip[i];
+                                usernameInput[userLetterCount + 1] = '\0';
+                                userLetterCount++;
+                            }
+                        }
                     }
-                    key = GetCharPressed();
+                } else if (ctrlDown && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_X))) {
+                    SetClipboardText(usernameInput);
+                    if (IsKeyPressed(KEY_X)) { userLetterCount = 0; usernameInput[0] = '\0'; }
+                } else {
+                    int key = GetCharPressed();
+                    while (key > 0) {
+                        if ((key >= 32) && (key <= 125) && (userLetterCount < MAX_INPUT_CHARS)) {
+                            usernameInput[userLetterCount] = (char)key; usernameInput[userLetterCount + 1] = '\0'; userLetterCount++;
+                        }
+                        key = GetCharPressed();
+                    }
+                    if (IsFieldKeyPressedRepeat(KEY_BACKSPACE, 0) && userLetterCount > 0) { userLetterCount--; usernameInput[userLetterCount] = '\0'; }
                 }
-                if (IsKeyPressed(KEY_BACKSPACE) && userLetterCount > 0) { userLetterCount--; usernameInput[userLetterCount] = '\0'; }
+                // Enter moves focus down to the Password field
+                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) { mouseOnUser = false; mouseOnPass = true; }
             }
             
+            // ── Typing Logic (Password) ──
             if (mouseOnPass) {
-                int key = GetCharPressed();
-                while (key > 0) {
-                    if ((key >= 32) && (key <= 125) && (passLetterCount < MAX_INPUT_CHARS)) {
-                        passwordInput[passLetterCount] = (char)key; passwordInput[passLetterCount + 1] = '\0'; passLetterCount++;
+                if (ctrlDown && IsKeyPressed(KEY_V)) {
+                    const char* clip = GetClipboardText();
+                    if (clip) {
+                        for (int i = 0; clip[i] != '\0' && passLetterCount < MAX_INPUT_CHARS; i++) {
+                            if (clip[i] >= 32 && clip[i] <= 125) {
+                                passwordInput[passLetterCount] = clip[i];
+                                passwordInput[passLetterCount + 1] = '\0';
+                                passLetterCount++;
+                            }
+                        }
                     }
-                    key = GetCharPressed();
+                } else if (ctrlDown && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_X))) {
+                    SetClipboardText(passwordInput);
+                    if (IsKeyPressed(KEY_X)) { passLetterCount = 0; passwordInput[0] = '\0'; }
+                } else {
+                    int key = GetCharPressed();
+                    while (key > 0) {
+                        if ((key >= 32) && (key <= 125) && (passLetterCount < MAX_INPUT_CHARS)) {
+                            passwordInput[passLetterCount] = (char)key; passwordInput[passLetterCount + 1] = '\0'; passLetterCount++;
+                        }
+                        key = GetCharPressed();
+                    }
+                    if (IsFieldKeyPressedRepeat(KEY_BACKSPACE, 1) && passLetterCount > 0) { passLetterCount--; passwordInput[passLetterCount] = '\0'; }
                 }
-                if (IsKeyPressed(KEY_BACKSPACE) && passLetterCount > 0) { passLetterCount--; passwordInput[passLetterCount] = '\0'; }
             }
             
             // ── Main Action Buttons ──
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                if (CheckCollisionPointRec(mousePoint, loginBtn)) {
+            // Enter, while focused on Password, submits the login just like clicking "Log in"
+            bool enterSubmit = (mouseOnPass && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)));
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || enterSubmit) {
+                if ((IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mousePoint, loginBtn)) || enterSubmit) {
                     if (login(string(usernameInput), string(passwordInput))) {
                         // Backend for Remember Me!
                         if (rememberMe) {
