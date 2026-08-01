@@ -22,6 +22,12 @@ extern Font robotoRegular;
  extern Font robotoBold;
 bool showDonePopup = false;
 Task* taskToCompletePtr = nullptr;
+bool showMarkDoneConfirm = false;
+int markDoneTaskId = -1;             
+string markDoneTaskName = ""; 
+static int g_sessionStartDay = 0;      // Day when session started (1-31)
+static int g_sessionStartMonth = 0;    // Month when session started (1-12)
+static int g_sessionStartYear = 0;
 // ─── Palette ────────────────────────────────────────────────
 static const Color C_BG         = { 11,  17,  26, 255 };
 static const Color C_PANEL      = { 17,  24,  36, 255 };
@@ -743,6 +749,61 @@ struct CardAction {
     bool doStats    = false; 
     bool doComplete = false;   // Mark-as-done button pressed directly from the task card
 };
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIXED: Mark Done Confirmation Popup (Uses Task ID, not pointer)
+// ─────────────────────────────────────────────────────────────────────────────
+static void DrawMarkDoneConfirmModal(Vector2 mouse) {
+    if (!showMarkDoneConfirm || markDoneTaskId == -1) return;
+
+    DrawRectangle(0, 0, WIN_W, WIN_H, {0, 0, 0, 160});
+
+    Rectangle box = { WIN_W/2 - 200.0f, WIN_H/2 - 100.0f, 400, 200 };
+    DrawRoundRect(box, 0.06f, C_PANEL);
+    DrawRoundRectLines(box, 0.06f, 1.5f, C_GREEN);
+
+    DrawText("Mark Task as Done?", (int)box.x + 24, (int)box.y + 20, 18, C_WHITE);
+
+    string msg = "Are you sure you want to mark \"" + markDoneTaskName + "\" as done?";
+    DrawWrappedText(msg.c_str(), (int)box.x + 24, (int)box.y + 54, (int)box.width - 48, 14, C_TEXT_DIM);
+
+    Rectangle yesBtn = { box.x + 24, box.y + box.height - 52, box.width/2 - 32, 38 };
+    Rectangle noBtn  = { box.x + box.width/2 + 8, box.y + box.height - 52, box.width/2 - 32, 38 };
+    bool yesHov = CheckCollisionPointRec(mouse, yesBtn);
+    bool noHov = CheckCollisionPointRec(mouse, noBtn);
+
+    DrawRoundRect(yesBtn, 0.2f, yesHov ? C_GREEN : C_DARKGRAY);
+    DrawText("Mark Done", (int)yesBtn.x + 10, (int)yesBtn.y + 10, 16, yesHov ? C_BG : C_TEXT_DIM);
+
+    DrawRoundRect(noBtn, 0.2f, noHov ? C_RED : C_DARKGRAY);
+    DrawText("Cancel", (int)noBtn.x + 20, (int)noBtn.y + 10, 16, noHov ? C_WHITE : C_TEXT_DIM);
+
+    bool enterConfirm = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
+    bool escCancel    = IsKeyPressed(KEY_ESCAPE);
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || enterConfirm || escCancel) {
+        yesHov = yesHov || enterConfirm;
+        noHov = noHov || escCancel;
+        
+        if (yesHov && markDoneTaskId != -1) {
+            // FIXED: Find task by ID in allTasks and mark it
+            for (auto& t : allTasks) {
+                if (t.taskId == markDoneTaskId) {
+                    t.isCompleted = true;
+                    t.dateCompleted = todayDateString();
+                    totalXP += xpForPriority(t.priority);
+                    saveUserData();
+                    break;  // Exit loop after finding and marking
+                }
+            }
+        }
+        
+        if (yesHov || noHov) {
+            showMarkDoneConfirm = false;
+            markDoneTaskId = -1;
+            markDoneTaskName = "";
+        }
+    }
+}
 
 // 3. THE UPDATED FUNCTION: Placed directly below the struct
 static CardAction DrawTaskCard(const Task& t, int idx, float x, float y, float w,
@@ -774,7 +835,7 @@ static CardAction DrawTaskCard(const Task& t, int idx, float x, float y, float w
     // ── Optimized Meta Placement (Date & Category Row) ──
     // Shifted left to x + w - 155 to prevent any stacking collisions with hover actions
     string due = fmtDate(t.dueDay, t.dueMonth, t.dueYear);
-    float anchorX = x + w - 155;
+    float anchorX = x + 880;
     
     DrawTextureEx(texCalendar, { anchorX - 22, (float)y + 14 }, 0.0f, 0.04f, WHITE);
     DrawText(due.c_str(), (int)anchorX, (int)y + 16, 12, C_TEXT_DIM);
@@ -785,35 +846,42 @@ static CardAction DrawTaskCard(const Task& t, int idx, float x, float y, float w
 
     // ── Always-visible Mark Done button (Dashboard task cards) ──
     if (mode == CARD_DASH) {
-        Rectangle doneBtn = { x + w - 160, y + h - 32, 100, 24 };
+        // FIXED: Position moved left to align with category (x + 20)
+        Rectangle doneBtn = { x + 860, y + h - 32, 100, 24 };  // ← Now on left, aligns with category
         bool doneHov = CheckCollisionPointRec(mouse, doneBtn);
         if (t.isCompleted) {
             DrawRoundRect(doneBtn, 0.3f, { C_GREEN.r, C_GREEN.g, C_GREEN.b, 40 });
             DrawRoundRectLines(doneBtn, 0.3f, 1.0f, C_GREEN);
-            DrawText("Completed", (int)doneBtn.x+12 , (int)doneBtn.y + 5, 12, C_GREEN);
+            DrawText("Completed", (int)doneBtn.x + 9, (int)doneBtn.y + 5, 12, C_GREEN);  // Text adjusted
         } else {
             DrawRoundRect(doneBtn, 0.3f, doneHov ? C_GREEN : C_DARKGRAY);
             DrawRoundRectLines(doneBtn, 0.3f, 1.0f, doneHov ? C_GREEN : C_BORDER);
-            DrawText("Mark Done", (int)doneBtn.x +12, (int)doneBtn.y + 5, 12, doneHov ? C_BG : C_WHITE);
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && doneHov) act.doComplete = true;
+            DrawText("Mark Done", (int)doneBtn.x + 9, (int)doneBtn.y + 5, 12, doneHov ? C_BG : C_WHITE);  // Text adjusted
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && doneHov) {
+                // CHANGED: Open popup instead (part of Fix #2)
+                showMarkDoneConfirm = true;
+                markDoneTaskId = t.taskId;
+                markDoneTaskName = t.taskName;
+            }
         }
     }
+    
     if (hov) {
         if (hov && mode == CARD_DASH) {
-            // Edit Button (Blue pill)
-            Rectangle edBtn = {x + w - 140, y + 14, 60, 24}; 
+            // Edit Button (Blue) - TOP
+            Rectangle edBtn = {x + w - 70, y + 14, 60, 24};  // ← NEW: Top right (same as before)
             bool eh = CheckCollisionPointRec(mouse, edBtn);
             DrawRoundRect(edBtn, 0.4f, eh ? C_BLUE : C_DARKGRAY);
             DrawRoundRectLines(edBtn, 0.4f, 1.0f, eh ? C_BLUE : C_BORDER);
-            DrawText("Edit", edBtn.x + 18, edBtn.y + 6, 12, C_WHITE);
+            DrawText("Edit", (int)edBtn.x + 18, (int)edBtn.y + 6, 12, C_WHITE);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && eh) act.doEdit = true;
 
-            // Delete Button (Red pill)
-            Rectangle delBtn = {x + w - 70, y + 14, 60, 24}; 
+            // Delete Button (Red) - BOTTOM (directly below Edit)
+            Rectangle delBtn = {x + w - 70, y + 52, 60, 24};  // ← NEW: 28px below (y + 42)
             bool dh = CheckCollisionPointRec(mouse, delBtn);
             DrawRoundRect(delBtn, 0.4f, dh ? C_RED : C_DARKGRAY);
             DrawRoundRectLines(delBtn, 0.4f, 1.0f, dh ? C_RED : C_BORDER);
-            DrawText("Delete", delBtn.x + 12, delBtn.y + 6, 12, C_WHITE);
+            DrawText("Delete", (int)delBtn.x + 12, (int)delBtn.y + 6, 12, C_WHITE);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dh) act.doDelete = true;
         }
         else if (mode == CARD_FOCUS) {
@@ -1093,8 +1161,8 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
             DrawText("Mark as Done", (int)doneBtn.x + 22, (int)doneBtn.y + 9, 14, dbHov ? C_BG : C_WHITE);
 
             // ─── FORCE THESE TO BE PERSISTENT ACROSS FRAMES ───
-            static bool showDonePopup = false;
-            static Task* taskToCompletePtr = nullptr;
+            bool showDonePopup = false;
+            Task* taskToCompletePtr = nullptr;
 
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dbHov) {
                 showDonePopup = true;
@@ -2047,7 +2115,20 @@ static void DrawProfileView(Vector2 mouse) {
         DrawText(ach[i].name, (int)(bx - nwid / 2.0f), (int)(by + 42), 12, txtCol);
     }
 }
-
+static void GetNepaliDateTime(int& day, int& month, int& year, int& hour, int& min, int& sec) {
+    time_t now = time(0);
+    
+    // Convert to Nepali time (UTC+5:45)
+    now += (5 * 3600) + (45 * 60);  // Add 5 hours 45 minutes
+    
+    tm* t = localtime(&now);
+    day = t->tm_mday;
+    month = t->tm_mon + 1;
+    year = t->tm_year + 1900;
+    hour = t->tm_hour;
+    min = t->tm_min;
+    sec = t->tm_sec;
+}
 // ─────────────────────────────────────────────────────────────
 //  Main Dashboard() — one Raylib window, all views
 // ─────────────────────────────────────────────────────────────
@@ -2073,6 +2154,12 @@ bool Dashboard() {
     int calMonth, calYear;
     { time_t n=time(0); tm*l=localtime(&n); calMonth=l->tm_mon+1; calYear=l->tm_year+1900; }
 
+    // Initialize session date/time in Nepali timezone
+    int cDay, cMonth, cYear, cHour, cMin, cSec;
+    GetNepaliDateTime(cDay, cMonth, cYear, cHour, cMin, cSec);
+    g_sessionStartDay = cDay;
+    g_sessionStartMonth = cMonth;
+    g_sessionStartYear = cYear;
     g_sessionStart = GetTime();
 
     // ─── Main loop ──────────────────────────────────────────
@@ -2080,6 +2167,23 @@ bool Dashboard() {
     while (!WindowShouldClose()) {
         Vector2 mouse = GetMousePosition();
         double sessionSecs = GetTime() - g_sessionStart;
+
+        // ─── NEW: Check if a new day has started (after midnight Nepali time) ───
+        int cDay, cMonth, cYear, cHour, cMin, cSec;
+        GetNepaliDateTime(cDay, cMonth, cYear, cHour, cMin, cSec);
+        
+        // If we've crossed into a new day, reset daily app time
+        if ((cDay != g_sessionStartDay) || (cMonth != g_sessionStartMonth) || (cYear != g_sessionStartYear)) {
+            // Reset daily app time (if you have a global for this)
+            // Example: if (you have g_dailyAppTime variable)
+            //   g_dailyAppTime = 0.0;
+            
+            // Update session start date to this new day
+            g_sessionStartDay = cDay;
+            g_sessionStartMonth = cMonth;
+            g_sessionStartYear = cYear;
+            g_sessionStart = GetTime();  // Reset timer for new day
+        }
 
         // ── Music Engine Tracking Layer ──
         if (wantsToLoadMusic) {
@@ -2223,9 +2327,13 @@ bool Dashboard() {
             }
         }
 
+         if (showMarkDoneConfirm) {
+            DrawMarkDoneConfirmModal(mouse);
+        }
+
         EndDrawing();
 }
     if (music.loaded) { StopMusicStream(music.track); UnloadMusicStream(music.track); }
     CloseAudioDevice();
-    return false; // Window was closed (not a logout) — main() should quit entirely
+    return false;
 }
