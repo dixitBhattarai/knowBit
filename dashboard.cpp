@@ -13,14 +13,15 @@
 #include <cstdio>
 #include <algorithm>
 #include <sstream>
-#define DrawText(text, x, y, size, color) DrawTextEx(robotoRegular, text, {(float)(x), (float)(y)}, (float)(size), 1.0f, color)
+#define DrawText(text, x, y, size, color) DrawTextEx(robotoRegular, text, {(float)(x), (float)(y)}, (float)(size)+3, 1.0f, color)
 static bool wantsToLoadMusic = false;
 using namespace std;
 extern Font customFont;
 extern Texture2D texLogo, texStreak, texClock, texMusic, texCalendar, texEdit, texDelete;
 extern Font robotoRegular;
  extern Font robotoBold;
-
+bool showDonePopup = false;
+Task* taskToCompletePtr = nullptr;
 // ─── Palette ────────────────────────────────────────────────
 static const Color C_BG         = { 11,  17,  26, 255 };
 static const Color C_PANEL      = { 17,  24,  36, 255 };
@@ -39,9 +40,8 @@ static const Color C_TEXT_DIM   = {120, 140, 160, 255 };
 static const Color C_WHITE      = {240, 245, 255, 255 };
 static const Color C_DARKGRAY   = { 35,  45,  60, 255 };
 
-// ─── Layout constants ───────────────────────────────────────
-static const int WIN_W  = 1280;
-static const int WIN_H  = 800;
+#define WIN_W GetScreenWidth()
+#define WIN_H GetScreenHeight()
 static const int SIDE_W = 190;
 static const int TOP_H  = 90;
 
@@ -321,7 +321,7 @@ static bool DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
     // ── Navigation Items ──
     struct NavItem { const char* icon; const char* label; View v; };
     NavItem items[] = {
-        { "##", "Dashboard",  VIEW_DASH     },
+        { "##", "Tasks",  VIEW_DASH     },
         { " O", "Focus Mode", VIEW_FOCUS    },
         { "||", "Statistics", VIEW_STATS    },
         { " C", "Calendar",   VIEW_CALENDAR },
@@ -348,7 +348,7 @@ static bool DrawSidebar(View& view, MusicState& music, Vector2 mouse) {
     DrawRoundRectLines(musicBar, 0.2f, 1.0f, musicHov ? C_ORANGE : C_BORDER);
     
     DrawTextureEx(texMusic, {16, (float)(WIN_H - 93)}, 0.0f, 0.05f, WHITE);
-    DrawText("   Lo-fi Music", 16, WIN_H - 93, 13, C_TEXT_DIM);
+    DrawText("     Lo-fi Music", 16, WIN_H - 93, 13, C_TEXT_DIM);
     DrawText(music.on ? "ON" : "OFF", SIDE_W - 44, WIN_H - 93, 13, music.on ? C_GREEN : C_TEXT_DIM);
     
     // ── THE FIX: Use RELEASED instead of PRESSED ──
@@ -785,66 +785,58 @@ static CardAction DrawTaskCard(const Task& t, int idx, float x, float y, float w
 
     // ── Always-visible Mark Done button (Dashboard task cards) ──
     if (mode == CARD_DASH) {
-        Rectangle doneBtn = { x + w - 118, y + h - 32, 100, 24 };
+        Rectangle doneBtn = { x + w - 160, y + h - 32, 100, 24 };
         bool doneHov = CheckCollisionPointRec(mouse, doneBtn);
         if (t.isCompleted) {
             DrawRoundRect(doneBtn, 0.3f, { C_GREEN.r, C_GREEN.g, C_GREEN.b, 40 });
             DrawRoundRectLines(doneBtn, 0.3f, 1.0f, C_GREEN);
-            DrawText("Completed", (int)doneBtn.x + 12, (int)doneBtn.y + 5, 12, C_GREEN);
+            DrawText("Completed", (int)doneBtn.x+12 , (int)doneBtn.y + 5, 12, C_GREEN);
         } else {
             DrawRoundRect(doneBtn, 0.3f, doneHov ? C_GREEN : C_DARKGRAY);
             DrawRoundRectLines(doneBtn, 0.3f, 1.0f, doneHov ? C_GREEN : C_BORDER);
-            DrawText("Mark Done", (int)doneBtn.x + 14, (int)doneBtn.y + 5, 12, doneHov ? C_BG : C_WHITE);
+            DrawText("Mark Done", (int)doneBtn.x +12, (int)doneBtn.y + 5, 12, doneHov ? C_BG : C_WHITE);
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && doneHov) act.doComplete = true;
         }
     }
-
-    // ── Action Buttons Control Layer (Renders purely on element hover) ──
     if (hov) {
-        if (mode == CARD_DASH) {
-            // Edit icon asset (Top Right Corner stack placement)
-            Rectangle edBtn = {x + w - 36, y + 14, 24, 24}; 
+        if (hov && mode == CARD_DASH) {
+            // Edit Button (Blue pill)
+            Rectangle edBtn = {x + w - 140, y + 14, 60, 24}; 
             bool eh = CheckCollisionPointRec(mouse, edBtn);
-            DrawTextureEx(texEdit, {edBtn.x, edBtn.y}, 0.0f, 1.5f, eh ? LIGHTGRAY : WHITE);
-            
-            if (eh) {
-                Rectangle tip = {edBtn.x - 48, edBtn.y + 2, 42, 20};
-                DrawRoundRect(tip, 0.3f, C_DARKGRAY);
-                DrawText("Edit", (int)tip.x + 8, (int)tip.y + 3, 11, C_WHITE);
-            }
+            DrawRoundRect(edBtn, 0.4f, eh ? C_BLUE : C_DARKGRAY);
+            DrawRoundRectLines(edBtn, 0.4f, 1.0f, eh ? C_BLUE : C_BORDER);
+            DrawText("Edit", edBtn.x + 18, edBtn.y + 6, 12, C_WHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && eh) act.doEdit = true;
 
-            // Delete icon asset (Stacked directly underneath edit button row)
-            Rectangle delBtn = {x + w - 36, y + 46, 24, 24}; 
+            // Delete Button (Red pill)
+            Rectangle delBtn = {x + w - 70, y + 14, 60, 24}; 
             bool dh = CheckCollisionPointRec(mouse, delBtn);
-            DrawTextureEx(texDelete, {delBtn.x, delBtn.y+3}, 0.0f, 0.1f, dh ? LIGHTGRAY : WHITE);
-            
-            if (dh) {
-                Rectangle tip = {delBtn.x - 58, delBtn.y + 2, 52, 20};
-                DrawRoundRect(tip, 0.3f, C_DARKGRAY);
-                DrawText("Delete", (int)tip.x + 8, (int)tip.y + 3, 11, C_WHITE);
-            }
-            
-            // Mouse event captures tracking return flags safely
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                if (dh) act.doDelete = true;
-                if (eh) act.doEdit   = true;
-            }
+            DrawRoundRect(delBtn, 0.4f, dh ? C_RED : C_DARKGRAY);
+            DrawRoundRectLines(delBtn, 0.4f, 1.0f, dh ? C_RED : C_BORDER);
+            DrawText("Delete", delBtn.x + 12, delBtn.y + 6, 12, C_WHITE);
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dh) act.doDelete = true;
         }
         else if (mode == CARD_FOCUS) {
-            // Focus execution mode action trigger layout (Clock asset link)
-            Rectangle focBtn = { x + w - 36, y + 32, 24, 24 }; 
-            bool fh = CheckCollisionPointRec(mouse, focBtn);
-            DrawTextureEx(texClock, { focBtn.x, focBtn.y }, 0.0f, 0.05f, fh ? LIGHTGRAY : WHITE);
+            Vector2 circleCenter = { x + w - 24, y + 44 }; 
+            float circleRadius = 8.0f; // Increased radius (original bounds were only 12px radius)
+            bool fh = CheckCollisionPointCircle(mouse, circleCenter, circleRadius);
             
+            // 3. Draw the solid filled green circle (Turns bright vibrant green on hover)
+            DrawCircleV(circleCenter, circleRadius, fh ? (Color){0, 255, 110, 255} : C_GREEN);
+            
+            // Draw a tiny dark triangle or play arrowhead symbol in the center so it feels like an interactive run button
+           
             if (fh) {
-                Rectangle tip = { focBtn.x - 52, focBtn.y - 24, 62, 20 };
+                Rectangle tip = { circleCenter.x - 68, circleCenter.y - 10, 48, 20 };
                 DrawRoundRect(tip, 0.3f, C_DARKGRAY);
                 DrawText("Enter", (int)tip.x + 8, (int)tip.y + 3, 11, C_WHITE);
             }
+            
+            // Keep your core operational trigger completely intact!
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && fh) {
                 act.doFocus = true;
             }
-        }
+}
     }
 
     // Statistics layout row tracking metrics logic
@@ -1004,7 +996,7 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
 
     // Circular timer ring
     float radius = 90.0f;
-    DrawCircleLines((int)cx,(int)cy,(int)radius+6, C_BORDER);
+    DrawCircleLines((int)cx,(int)cy,(int)radius+8, C_BORDER);
     DrawCircleLines((int)cx,(int)cy,(int)radius,   C_BORDER);
 
     float progress = 0.0f;
@@ -1091,6 +1083,7 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
             DrawText(t.taskCategory.c_str(),(int)tr.x+8,(int)tr.y+5,13,C_TEAL);
         }
 
+    // ── ADDED: TASK COMPLETION ACTION UI ──
         // ── ADDED: TASK COMPLETION ACTION UI ──
         if (!t.isCompleted) {
             Rectangle doneBtn = { cx - 70, ty + 90, 140, 34 };
@@ -1099,15 +1092,17 @@ static void DrawFocusPanel(int taskIdx, FocusTimer& ft, Vector2 mouse) {
             DrawRoundRectLines(doneBtn, 0.3f, 1.0f, dbHov ? C_GREEN : C_BORDER);
             DrawText("Mark as Done", (int)doneBtn.x + 22, (int)doneBtn.y + 9, 14, dbHov ? C_BG : C_WHITE);
 
+            // ─── FORCE THESE TO BE PERSISTENT ACROSS FRAMES ───
+            static bool showDonePopup = false;
+            static Task* taskToCompletePtr = nullptr;
+
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && dbHov) {
-                t.isCompleted = true;
-                t.dateCompleted = todayDateString();
-                totalXP += xpForPriority(t.priority);
-                saveUserData(); // Instantly write the new data state to disk
+                showDonePopup = true;
+                taskToCompletePtr = &t; 
             }
         } else {
             Rectangle doneBadge = { cx - 60, ty + 90, 120, 30 };
-            DrawRoundRect(doneBadge, 0.3f, { 0, 255, 65, 40 }); // Semi-transparent green background fill
+            DrawRoundRect(doneBadge, 0.3f, { 0, 255, 65, 40 }); 
             DrawRoundRectLines(doneBadge, 0.3f, 1.0f, C_GREEN);
             DrawText("Completed", (int)doneBadge.x + 16, (int)doneBadge.y + 8, 14, C_GREEN);
         }
@@ -1159,7 +1154,7 @@ static void DrawTodayPanel(float x, float y, float w, float h, Vector2 mouse) {
     // Quick list with tap-to-complete checkboxes
     float lx2 = x + 160, ly2 = y + 40;
     if (total == 0) {
-        DrawText("Nothing due today — enjoy the calm!", (int)lx2, (int)(y + h/2 - 8), 14, C_TEXT_DIM);
+        DrawText("Nothing due today, enjoy the calm!", (int)lx2, (int)(y + h/2 - 8), 14, C_TEXT_DIM);
     } else {
         int shown = 0;
         for (int idx : todayIdx) {
@@ -1627,7 +1622,7 @@ static void DrawCalView(int& calMonth, int& calYear, Vector2 mouse) {
 
         if (completedCount > 0) {
             char cb[8]; snprintf(cb, sizeof(cb), "%d", completedCount);
-            DrawCircle((int)(rx+cellW-18), (int)(ry+18), 9, C_GREEN);
+            DrawCircle((int)(rx+cellW-18), (int)(ry+20), 9, C_GREEN);
             DrawText(cb, (int)(rx+cellW-21), (int)(ry+11), 12, C_BG);
         }
         if (pendingCount > 0) {
@@ -2175,10 +2170,61 @@ bool Dashboard() {
                 DrawText(bang, WIN_W / 2 - bw / 2 + 12, 6, 14, C_WHITE);
             }
         }
+        // ... all your normal panel drawing code is up here ...
+
+       
+        // ─── PLOP THIS INLINE BLOCK RIGHT BEFORE ENDDRAWING() ───
+        static bool showDonePopup = false;         // Matches the state above
+        static Task* taskToCompletePtr = nullptr;  // Matches the pointer above
+
+        if (showDonePopup && taskToCompletePtr != nullptr) {
+            // 1. Dark background overlay dims the entire app window
+            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {0, 0, 0, 160});
+            
+            // 2. Center Modal Canvas Setup
+            Rectangle box = { GetScreenWidth()/2.0f - 200.0f, GetScreenHeight()/2.0f - 80.0f, 400, 160 };
+            DrawRoundRect(box, 0.06f, C_PANEL);
+            DrawRoundRectLines(box, 0.06f, 1.5f, C_GREEN);
+
+            DrawText("Mark Task as Done?", (int)box.x + 24, (int)box.y + 20, 18, C_WHITE);
+            DrawText("Are you sure you want to mark this task as done?", (int)box.x + 24, (int)box.y + 54, 14, C_TEXT_DIM);
+
+            // 3. Action Button Layout
+            Rectangle yesBtn = { box.x + 24, box.y + box.height - 52, box.width/2 - 32, 38 };
+            Rectangle noBtn  = { box.x + box.width/2 + 8, box.y + box.height - 52, box.width/2 - 32, 38 };
+
+            Vector2 mPos = GetMousePosition();
+            bool yHov = CheckCollisionPointRec(mPos, yesBtn);
+            bool nHov = CheckCollisionPointRec(mPos, noBtn);
+
+            // Draw Confirmation Option
+            DrawRectangleRec(yesBtn, yHov ? ColorAlpha(GREEN, 0.9f) : C_GREEN);
+            DrawText("Yes", yesBtn.x + 50, yesBtn.y + 10, 14, C_BG);
+
+            // Draw Cancellation Option
+            DrawRectangleRec(noBtn, nHov ? LIGHTGRAY : C_DARKGRAY);
+            DrawText("Cancel", noBtn.x + 40, noBtn.y + 10, 14, C_WHITE);
+
+            // 4. Click Verification Handling
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                if (yHov) {
+                    taskToCompletePtr->isCompleted = true;
+                    taskToCompletePtr->dateCompleted = todayDateString();
+                    totalXP += xpForPriority(taskToCompletePtr->priority);
+                    saveUserData();
+                    
+                    showDonePopup = false;
+                    taskToCompletePtr = nullptr;
+                } 
+                else if (nHov) {
+                    showDonePopup = false;
+                    taskToCompletePtr = nullptr;
+                }
+            }
+        }
 
         EndDrawing();
-    }
-
+}
     if (music.loaded) { StopMusicStream(music.track); UnloadMusicStream(music.track); }
     CloseAudioDevice();
     return false; // Window was closed (not a logout) — main() should quit entirely

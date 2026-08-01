@@ -12,7 +12,7 @@ Font robotoBold;
 int main() {
     // Put this line right BEFORE InitWindow() in your main file
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
-
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 800, "knowBit v1.0");
     robotoRegular = LoadFontEx("assets/Roboto-Regular.ttf", 20, NULL, 0);
     robotoBold = LoadFontEx("assets/Roboto-Bold.ttf", 48, NULL, 0); 
@@ -22,21 +22,11 @@ int main() {
 // After loading your font, add this to smooth the text:
     SetTextureFilter(customFont.texture, TEXTURE_FILTER_BILINEAR);
     SetTargetFPS(60);
- texLogo = LoadTexture("assets/logo.png");
+    texLogo = LoadTexture("assets/logo.png");
     texStreak = LoadTexture("assets/streak.png");
     texClock = LoadTexture("assets/clock.png");
     texMusic = LoadTexture("assets/music.png");
     texCalendar = LoadTexture("assets/calendar.png");
-    texEdit = LoadTexture("assets/edit.png");
-        if (texEdit.id == 0) {
-    printf("\n\n!!! ERROR: RAYLIB CANNOT FIND THE EDIT IMAGE !!!\n\n");
-} else {
-    printf("\n\n>>> SUCCESS: EDIT IMAGE LOADED PERFECTLY <<<\n\n");
-}
-    texDelete = LoadTexture("assets/delete.png");  
-    // Keep cycling between the login screen and the dashboard: logging out
-    // takes you back to login instead of closing the whole program. Only a
-    // cancelled/failed login or actually closing the window ends this loop.
     bool running = true;
     while (running) {
         bool loginSuccess = runLoginGUI();

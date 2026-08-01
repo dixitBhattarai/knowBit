@@ -4,7 +4,8 @@
 #include <vector>
 #include <string>
 
-struct Task {
+class Task {
+public:
     int taskId;
     std::string taskName;
     std::string taskDescription;
@@ -25,7 +26,7 @@ extern int activeUserMaxStreak;
 extern int lastYear;
 extern int lastMonth;
 extern int lastDay;
-extern int totalXP;               // Cumulative XP earned by completing tasks
+extern int totalXP;               
 void loadUserData();
 void saveUserData();
 void addTask();
