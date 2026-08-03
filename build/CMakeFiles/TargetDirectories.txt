@@ -1,0 +1,3 @@
+/Users/rabintimalsina/Documents/GitHub/knowBit/build/CMakeFiles/knowBitApp.dir
+/Users/rabintimalsina/Documents/GitHub/knowBit/build/CMakeFiles/edit_cache.dir
+/Users/rabintimalsina/Documents/GitHub/knowBit/build/CMakeFiles/rebuild_cache.dir
